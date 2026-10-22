@@ -1,36 +1,66 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/utils';
 import {
-  Loader2, ArrowLeft, Star, Target, MessageSquare,
+  Loader2, ArrowLeft, Target,
   ThumbsUp, AlertTriangle, Lightbulb, TrendingUp,
-  RefreshCw, BarChart3, CheckCircle2, Clock
+  RefreshCw, BarChart3, CheckCircle2, History, PlusCircle
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 export default function Feedback() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [feedback, setFeedback] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [completedInterviews, setCompletedInterviews] = useState([]);
+  const [activeInterviewId, setActiveInterviewId] = useState(id || null);
 
   useEffect(() => {
-    fetchFeedback();
+    fetchFeedbackData();
   }, [id]);
 
-  const fetchFeedback = async () => {
+  const fetchFeedbackData = async () => {
+    setLoading(true);
     try {
-      const res = await api.get(`/interviews/${id}/feedback`);
-      setFeedback(res.data);
+      // Fetch all user interviews to support /feedback index view & interview switching
+      const interviewsRes = await api.get('/interviews');
+      const allInterviews = Array.isArray(interviewsRes.data) ? interviewsRes.data : [];
+      const completed = allInterviews.filter((i) => i.status === 'completed');
+      setCompletedInterviews(completed);
+
+      // Determine which interview feedback to show
+      let targetId = id;
+      if (!targetId && completed.length > 0) {
+        // Default to latest completed interview if on /feedback
+        targetId = completed[0]._id;
+      }
+
+      if (targetId) {
+        setActiveInterviewId(targetId);
+        const res = await api.get(`/interviews/${targetId}/feedback`);
+        setFeedback(res.data);
+      } else {
+        setActiveInterviewId(null);
+        setFeedback(null);
+      }
     } catch (err) {
       console.error('Failed to load feedback:', err);
+      setFeedback(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectInterview = (newId) => {
+    if (newId && newId !== activeInterviewId) {
+      navigate(`/feedback/${newId}`);
     }
   };
 
@@ -40,21 +70,61 @@ export default function Feedback() {
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Loading Feedback...</h2>
-          <p className="text-muted-foreground">AI is analyzing your responses</p>
+          <p className="text-muted-foreground">AI is preparing your performance report</p>
         </div>
       </div>
     );
   }
 
+  // Empty state when user has no completed interviews
+  if (!feedback && completedInterviews.length === 0) {
+    return (
+      <div className="container max-w-xl py-16 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-purple-100 dark:bg-purple-950/40 text-primary flex items-center justify-center mx-auto mb-4">
+          <BarChart3 className="w-8 h-8" />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">No Interview Feedback Yet</h2>
+        <p className="text-muted-foreground mb-6">
+          You haven't completed any interviews yet. Complete your first mock interview to get comprehensive AI evaluation scores, category breakdowns, and personalized tips.
+        </p>
+        <div className="flex items-center justify-center gap-4">
+          <Link to="/dashboard">
+            <Button variant="outline">
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Dashboard
+            </Button>
+          </Link>
+          <Link to="/create-interview">
+            <Button variant="gradient">
+              <PlusCircle className="w-4 h-4 mr-2" />
+              Start an Interview
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Not found or not completed state
   if (!feedback) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
+        <div className="text-center max-w-md mx-auto p-6">
+          <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Feedback not available</h2>
-          <p className="text-muted-foreground mb-4">The feedback for this interview is not ready yet.</p>
-          <Link to="/dashboard">
-            <Button variant="outline">Back to Dashboard</Button>
-          </Link>
+          <p className="text-muted-foreground mb-4">
+            The feedback for this interview is either still processing or not found.
+          </p>
+          <div className="flex items-center justify-center gap-3">
+            <Link to="/dashboard">
+              <Button variant="outline">Back to Dashboard</Button>
+            </Link>
+            {completedInterviews.length > 0 && (
+              <Button variant="default" onClick={() => navigate(`/feedback/${completedInterviews[0]._id}`)}>
+                View Latest Feedback
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -68,7 +138,7 @@ export default function Feedback() {
     { category: 'Depth', score: feedback.depthScore || 72 },
   ];
 
-  const radarData = performanceData.map(d => ({
+  const radarData = performanceData.map((d) => ({
     subject: d.category,
     score: d.score,
     fullMark: 100,
@@ -92,18 +162,43 @@ export default function Feedback() {
             {feedback.role} • {feedback.type} Interview • {formatDate(feedback.date)}
           </p>
         </div>
-        <Badge variant={feedback.score >= 70 ? 'success' : feedback.score >= 50 ? 'warning' : 'destructive'} className="text-lg px-4 py-1.5">
-          Score: {feedback.score}%
-        </Badge>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Switcher dropdown when user has multiple completed interviews */}
+          {completedInterviews.length > 1 && (
+            <div className="flex items-center gap-2 bg-muted/40 px-3 py-1.5 rounded-lg border">
+              <History className="w-4 h-4 text-muted-foreground" />
+              <Select value={activeInterviewId || ''} onValueChange={handleSelectInterview}>
+                <SelectTrigger className="w-[210px] h-8 text-xs bg-transparent border-0 shadow-none focus:ring-0">
+                  <SelectValue placeholder="Select interview" />
+                </SelectTrigger>
+                <SelectContent>
+                  {completedInterviews.map((item) => (
+                    <SelectItem key={item._id} value={item._id} className="text-xs">
+                      {item.role} ({item.score || 0}%) • {formatDate(item.createdAt)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <Badge
+            variant={feedback.score >= 70 ? 'success' : feedback.score >= 50 ? 'warning' : 'destructive'}
+            className="text-lg px-4 py-1.5"
+          >
+            Score: {feedback.score}%
+          </Badge>
+        </div>
       </div>
 
       {/* Score Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Overall Score', value: `${feedback.score}%`, icon: Target, color: 'text-purple-600', bg: 'bg-purple-50' },
-          { label: 'Questions Answered', value: `${feedback.answered || 0}/${feedback.total || 0}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Strengths', value: feedback.strengths?.length || 0, icon: ThumbsUp, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: 'Areas to Improve', value: feedback.improvements?.length || 0, icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: 'Overall Score', value: `${feedback.score}%`, icon: Target, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/40' },
+          { label: 'Questions Answered', value: `${feedback.answered || 0}/${feedback.total || 0}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/40' },
+          { label: 'Strengths', value: feedback.strengths?.length || 0, icon: ThumbsUp, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/40' },
+          { label: 'Areas to Improve', value: feedback.improvements?.length || 0, icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/40' },
         ].map((stat) => {
           const Icon = stat.icon;
           return (
@@ -147,9 +242,7 @@ export default function Feedback() {
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="category" className="text-xs" />
                       <YAxis domain={[0, 100]} className="text-xs" />
-                      <Tooltip
-                        contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}
-                      />
+                      <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0' }} />
                       <Bar dataKey="score" fill="#6366F1" radius={[6, 6, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -208,14 +301,14 @@ export default function Feedback() {
                   <div className="space-y-3">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground mb-1">Your Answer:</p>
-                      <p className="text-sm bg-muted/50 rounded-lg p-3">{qf.answer}</p>
+                      <p className="text-sm bg-muted/50 rounded-lg p-3">{qf.answer || 'No answer recorded.'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-muted-foreground mb-1">Feedback:</p>
                       <p className="text-sm">{qf.feedback}</p>
                     </div>
                     {qf.tips && (
-                      <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                      <div className="flex items-start gap-2 text-sm text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-lg p-3">
                         <Lightbulb className="w-4 h-4 mt-0.5 shrink-0" />
                         <p>{qf.tips}</p>
                       </div>
@@ -282,12 +375,14 @@ export default function Feedback() {
 
       {/* Actions */}
       <div className="flex items-center justify-center gap-4 pt-4">
-        <Link to={`/interview/${id}`}>
-          <Button variant="outline">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Retry Interview
-          </Button>
-        </Link>
+        {activeInterviewId && (
+          <Link to={`/interview/${activeInterviewId}`}>
+            <Button variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry Interview
+            </Button>
+          </Link>
+        )}
         <Link to="/create-interview">
           <Button variant="gradient">
             <BarChart3 className="w-4 h-4 mr-2" />
@@ -298,4 +393,3 @@ export default function Feedback() {
     </div>
   );
 }
-

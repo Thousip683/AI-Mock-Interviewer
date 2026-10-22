@@ -125,6 +125,17 @@ export default function App() {
 
         {/* Feedback */}
         <Route
+          path="/feedback"
+          element={
+            <ProtectedRoute>
+              <>
+                <Navbar />
+                <Feedback />
+              </>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/feedback/:id"
           element={
             <ProtectedRoute>
