@@ -26,6 +26,7 @@ export default function InterviewScreen() {
   const [isPaused, setIsPaused] = useState(false);
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     fetchInterview();
@@ -40,6 +41,8 @@ export default function InterviewScreen() {
   }, [id]);
 
   const fetchInterview = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     try {
       const res = await api.get(`/interviews/${id}`);
       setInterview(res.data);
@@ -65,6 +68,8 @@ export default function InterviewScreen() {
     } catch (err) {
       console.error('Failed to load interview:', err);
       setStage('error');
+    } finally {
+      loadingRef.current = false;
     }
   };
 

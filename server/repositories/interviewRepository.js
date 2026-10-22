@@ -215,27 +215,26 @@ export async function saveInterviewRecord(userId, interview) {
 
   if (isMongoReady()) {
     try {
-      const existing = await Interview.findOne({ _id: interviewId, clerkUserId: userId });
-
-      if (!existing) {
-        console.warn(`[REPOSITORY] ⚠️ saveInterviewRecord: Record not found in MongoDB for id "${interviewId}" and user "${userId}"`);
-        return null;
-      }
-
-      // Safe update: strip version keys and immutable IDs to avoid Mongoose VersionError
+      // Safe update: strip version keys and immutable IDs
       const updateData = { ...interview };
       delete updateData._id;
       delete updateData.id;
       delete updateData.__v;
       delete updateData.createdAt;
 
-      Object.assign(existing, updateData, {
-        clerkUserId: userId,
-      });
+      const updated = await Interview.findOneAndUpdate(
+        { _id: interviewId, clerkUserId: userId },
+        { $set: updateData },
+        { new: true }
+      );
 
-      await existing.save();
+      if (!updated) {
+        console.warn(`[REPOSITORY] ⚠️ saveInterviewRecord: Record not found in MongoDB for id "${interviewId}" and user "${userId}"`);
+        return null;
+      }
+
       console.log(`[REPOSITORY] ✅ saveInterviewRecord: Successfully updated interview "${interviewId}" in MongoDB`);
-      return existing.toObject();
+      return updated.toObject();
     } catch (err) {
       console.error(`[REPOSITORY] ❌ saveInterviewRecord MongoDB error for interview "${interviewId}": ${err.message}`, err);
       throw err;
