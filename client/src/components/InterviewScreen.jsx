@@ -113,13 +113,17 @@ export default function InterviewScreen() {
       setTimeLeft(120);
       startTimer(2);
     } else {
-      // Interview completed
-      setStage('completed');
+      // Interview completed - show submitting loading screen
+      setStage('submitting');
+      setIsProcessing(true);
       try {
         await api.post(`/interviews/${id}/submit`, { answers: newAnswers, questions });
         navigate(`/feedback/${id}`);
       } catch (err) {
         console.error('Failed to submit answers:', err);
+        setStage('error');
+      } finally {
+        setIsProcessing(false);
       }
     }
   };
@@ -185,6 +189,29 @@ export default function InterviewScreen() {
               ? 'AI is crafting personalized questions for you'
               : 'Preparing your interview session'}
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (stage === 'submitting' || stage === 'completed') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <Loader2 className="w-16 h-16 animate-spin text-primary" />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="w-3 h-3 rounded-full bg-primary/40 animate-ping" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Analyzing Your Interview...</h2>
+          <p className="text-muted-foreground mb-4">
+            AI is analyzing your answers, evaluating technical accuracy, and generating detailed feedback.
+          </p>
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground bg-muted/50 py-2 px-4 rounded-full max-w-xs mx-auto">
+            <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
+            Generating feedback report...
+          </div>
         </div>
       </div>
     );
@@ -345,12 +372,17 @@ export default function InterviewScreen() {
           </Button>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={handleNext}>
+            <Button variant="ghost" onClick={handleNext} disabled={isProcessing}>
               <SkipForward className="w-4 h-4 mr-2" />
               Skip
             </Button>
-            <Button onClick={handleNext} disabled={!answer.trim()}>
-              {currentIndex < questions.length - 1 ? (
+            <Button onClick={handleNext} disabled={isProcessing || !answer.trim()}>
+              {isProcessing ? (
+                <>
+                  Submitting...
+                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                </>
+              ) : currentIndex < questions.length - 1 ? (
                 <>
                   Next
                   <Send className="w-4 h-4 ml-2" />
