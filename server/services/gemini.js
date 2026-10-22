@@ -39,7 +39,7 @@ export async function generateQuestions(role, type, experience, jobDescription, 
 
   try {
     const genAI = getGenAIClient();
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }, { apiVersion: 'v1beta' });
 
     let prompt = `Generate ${count} interview questions for a ${experience} level ${role} position.\n`;
     prompt += `Interview type: ${type}\n`;
@@ -63,7 +63,7 @@ export async function generateQuestions(role, type, experience, jobDescription, 
   }
 ]`;
 
-    console.log(`[GEMINI] 📡 Dispatching prompt to Gemini model (gemini-1.5-flash)...`);
+    console.log(`[GEMINI] 📡 Dispatching prompt to Gemini model (gemini-2.5-flash)...`);
     const startTime = Date.now();
     const result = await model.generateContent(prompt);
     const response = await result.response;
@@ -106,7 +106,7 @@ export async function generateFeedback(questions, answers) {
 
   try {
     const genAI = getGenAIClient();
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' }, { apiVersion: 'v1beta' });
 
     let prompt = `Analyze the following interview answers and provide detailed feedback.\n\n`;
     prompt += `Questions and Answers:\n`;
@@ -139,7 +139,7 @@ export async function generateFeedback(questions, answers) {
   "score": 72
 }`;
 
-    console.log(`[GEMINI] 📡 Dispatching feedback prompt to Gemini (gemini-1.5-flash)...`);
+    console.log(`[GEMINI] 📡 Dispatching feedback prompt to Gemini (gemini-2.5-flash)...`);
     const startTime = Date.now();
     const result = await model.generateContent(prompt);
     const response = await result.response;
