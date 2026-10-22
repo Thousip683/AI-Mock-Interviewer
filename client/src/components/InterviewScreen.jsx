@@ -6,24 +6,26 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
 import { 
-  Mic, MicOff, Send, Play, Pause, 
+  Mic, MicOff, Send, Play, 
   Loader2, Clock, ArrowLeft, CheckCircle2,
-  MessageSquare, SkipForward, AlertCircle
+  MessageSquare, SkipForward, AlertCircle, Brain
 } from 'lucide-react';
 
 export default function InterviewScreen() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [interview, setInterview] = useState(null);
+  // questions grows dynamically as follow-ups are fetched
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answer, setAnswer] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [stage, setStage] = useState('loading'); // loading, ready, in_progress, completed
+  const [isFetchingFollowUp, setIsFetchingFollowUp] = useState(false);
+  const [stage, setStage] = useState('loading'); // loading, generating, ready, in_progress, fetching_followup, submitting, error
   const [answers, setAnswers] = useState([]);
   const [timeLeft, setTimeLeft] = useState(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isInterviewComplete, setIsInterviewComplete] = useState(false);
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
   const loadingRef = useRef(false);
@@ -31,12 +33,8 @@ export default function InterviewScreen() {
   useEffect(() => {
     fetchInterview();
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (recognitionRef.current) recognitionRef.current.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [id]);
 
@@ -46,20 +44,20 @@ export default function InterviewScreen() {
     try {
       const res = await api.get(`/interviews/${id}`);
       setInterview(res.data);
-      
+
       if (res.data.status === 'completed') {
         navigate(`/feedback/${id}`);
         return;
       }
 
-      // Load questions
+      // Load existing questions
       const qRes = await api.get(`/interviews/${id}/questions`);
       setQuestions(qRes.data);
-      
+
       if (qRes.data.length > 0) {
         setStage('ready');
       } else {
-        // Generate questions
+        // Generate the opening question
         setStage('generating');
         const genRes = await api.post(`/interviews/${id}/generate`);
         setQuestions(genRes.data);
@@ -74,12 +72,12 @@ export default function InterviewScreen() {
   };
 
   const startTimer = useCallback((minutes) => {
+    if (timerRef.current) clearInterval(timerRef.current);
     setTimeLeft(minutes * 60);
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          handleNext();
           return 0;
         }
         return prev - 1;
@@ -89,42 +87,91 @@ export default function InterviewScreen() {
 
   const startInterview = () => {
     setStage('in_progress');
-    startTimer(2); // 2 minutes per question initially
+    startTimer(3); // 3 minutes per question for more thoughtful answers
   };
 
+  /**
+   * Called when the candidate clicks "Next" or "Skip".
+   * 1. Save the current answer.
+   * 2. Request a follow-up question from the server (adaptive AI).
+   * 3. If the server signals isComplete OR we hit max questions → submit.
+   */
   const handleNext = async () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
+    if (timerRef.current) clearInterval(timerRef.current);
 
-    // Save current answer
+    const currentQuestion = questions[currentIndex];
     const currentAnswer = {
-      questionId: questions[currentIndex]._id,
-      question: questions[currentIndex].text,
+      questionId: currentQuestion._id,
+      question: currentQuestion.text,
       answer: answer.trim(),
     };
-
     const newAnswers = [...answers, currentAnswer];
     setAnswers(newAnswers);
 
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex(prev => prev + 1);
-      setAnswer('');
-      setTimeLeft(120);
-      startTimer(2);
-    } else {
-      // Interview completed - show submitting loading screen
-      setStage('submitting');
-      setIsProcessing(true);
-      try {
-        await api.post(`/interviews/${id}/submit`, { answers: newAnswers, questions });
-        navigate(`/feedback/${id}`);
-      } catch (err) {
-        console.error('Failed to submit answers:', err);
-        setStage('error');
-      } finally {
-        setIsProcessing(false);
+    // If the interview was already flagged complete (from a previous followup response)
+    if (isInterviewComplete) {
+      await submitInterview(newAnswers);
+      return;
+    }
+
+    const maxQuestions = interview?.questionCount || 5;
+    const nextIndex = currentIndex + 1; // how many questions answered after this one
+
+    // Reached the configured question count — submit without requesting a follow-up
+    if (nextIndex >= maxQuestions) {
+      await submitInterview(newAnswers);
+      return;
+    }
+
+    // Request an adaptive follow-up from the server
+    setIsFetchingFollowUp(true);
+    setStage('fetching_followup');
+    try {
+      const res = await api.post(`/interviews/${id}/followup`, {
+        previousQuestion: currentQuestion.text,
+        previousAnswer: answer.trim(),
+        questionIndex: nextIndex - 1, // 0-based index of the question just answered
+      });
+
+      if (res.data.isComplete || !res.data.question) {
+        // AI says we have enough coverage — submit
+        await submitInterview(newAnswers);
+        return;
       }
+
+      // Append the follow-up question and show it
+      setQuestions(prev => {
+        // The server already persisted the question; use what it returned
+        const alreadyPresent = prev.some(q => q.text === res.data.question.text);
+        return alreadyPresent ? prev : [...prev, res.data.question];
+      });
+      setCurrentIndex(nextIndex);
+      setAnswer('');
+      startTimer(3);
+      setStage('in_progress');
+    } catch (err) {
+      console.error('Failed to get follow-up question:', err);
+      // Graceful degradation: if follow-up fails, just submit with what we have
+      await submitInterview(newAnswers);
+    } finally {
+      setIsFetchingFollowUp(false);
+    }
+  };
+
+  const submitInterview = async (finalAnswers) => {
+    setStage('submitting');
+    setIsProcessing(true);
+    try {
+      await api.post(`/interviews/${id}/submit`, {
+        answers: finalAnswers,
+        questions,
+      });
+      navigate(`/feedback/${id}`);
+    } catch (err) {
+      console.error('Failed to submit answers:', err);
+      setStage('error');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -133,12 +180,8 @@ export default function InterviewScreen() {
       alert('Speech recognition is not supported in this browser.');
       return;
     }
-
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
+    if (isRecording) stopRecording();
+    else startRecording();
   };
 
   const startRecording = () => {
@@ -151,10 +194,7 @@ export default function InterviewScreen() {
     recognition.onresult = (event) => {
       let finalTranscript = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        }
+        if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
       }
       setAnswer(prev => prev + finalTranscript);
     };
@@ -176,17 +216,18 @@ export default function InterviewScreen() {
     }
   };
 
+  // ── Loading/Generating screen ───────────────────────────────────────────────
   if (stage === 'loading' || stage === 'generating') {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">
-            {stage === 'generating' ? 'Generating Questions...' : 'Loading Interview...'}
+            {stage === 'generating' ? 'Preparing Your Interview...' : 'Loading Interview...'}
           </h2>
           <p className="text-muted-foreground">
-            {stage === 'generating' 
-              ? 'AI is crafting personalized questions for you'
+            {stage === 'generating'
+              ? 'The AI interviewer is crafting your opening question'
               : 'Preparing your interview session'}
           </p>
         </div>
@@ -194,7 +235,29 @@ export default function InterviewScreen() {
     );
   }
 
-  if (stage === 'submitting' || stage === 'completed') {
+  // ── Fetching follow-up screen ───────────────────────────────────────────────
+  if (stage === 'fetching_followup') {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="relative w-16 h-16 mx-auto mb-4">
+            <Brain className="w-16 h-16 text-primary animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Analyzing Your Answer...</h2>
+          <p className="text-muted-foreground mb-4">
+            The AI interviewer is reviewing your response and deciding what to explore next.
+          </p>
+          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground bg-muted/50 py-2 px-4 rounded-full max-w-xs mx-auto">
+            <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
+            Preparing follow-up question...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Submitting / analyzing screen ──────────────────────────────────────────
+  if (stage === 'submitting') {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center max-w-md mx-auto p-6">
@@ -206,7 +269,7 @@ export default function InterviewScreen() {
           </div>
           <h2 className="text-2xl font-bold mb-2">Analyzing Your Interview...</h2>
           <p className="text-muted-foreground mb-4">
-            AI is analyzing your answers, evaluating technical accuracy, and generating detailed feedback.
+            AI is evaluating your answers, assessing technical depth, and generating your detailed feedback report.
           </p>
           <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground bg-muted/50 py-2 px-4 rounded-full max-w-xs mx-auto">
             <span className="inline-block w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -217,6 +280,7 @@ export default function InterviewScreen() {
     );
   }
 
+  // ── Error screen ───────────────────────────────────────────────────────────
   if (stage === 'error') {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -230,7 +294,9 @@ export default function InterviewScreen() {
     );
   }
 
+  // ── Ready screen ───────────────────────────────────────────────────────────
   if (stage === 'ready') {
+    const maxQ = interview?.questionCount || 5;
     return (
       <div className="container max-w-3xl py-8">
         <Card className="text-center">
@@ -240,24 +306,27 @@ export default function InterviewScreen() {
             </div>
             <CardTitle className="text-2xl">Ready to Begin?</CardTitle>
             <CardDescription className="text-base max-w-md mx-auto">
-              You'll have {questions.length} questions to answer. Take your time and be thorough in your responses.
+              The AI interviewer will ask you one question at a time and adapt based on your answers — just like a real technical interview.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto mb-6">
               <div className="p-3 rounded-xl bg-muted/50">
-                <p className="text-2xl font-bold text-primary">{questions.length}</p>
+                <p className="text-2xl font-bold text-primary">~{maxQ}</p>
                 <p className="text-xs text-muted-foreground">Questions</p>
               </div>
               <div className="p-3 rounded-xl bg-muted/50">
-                <p className="text-2xl font-bold text-primary">2</p>
+                <p className="text-2xl font-bold text-primary">3</p>
                 <p className="text-xs text-muted-foreground">Min/Each</p>
               </div>
               <div className="p-3 rounded-xl bg-muted/50">
-                <p className="text-2xl font-bold text-primary">Voice</p>
-                <p className="text-xs text-muted-foreground">Input</p>
+                <p className="text-2xl font-bold text-primary">AI</p>
+                <p className="text-xs text-muted-foreground">Adaptive</p>
               </div>
             </div>
+            <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+              Questions will adapt to your answers. The interviewer may go deeper on strong responses or probe gaps in weaker ones.
+            </p>
           </CardContent>
           <CardFooter className="justify-center gap-4">
             <Button variant="outline" onClick={() => navigate('/dashboard')}>
@@ -274,9 +343,13 @@ export default function InterviewScreen() {
     );
   }
 
+  // ── In-progress screen ─────────────────────────────────────────────────────
   const currentQuestion = questions[currentIndex];
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
+  const maxQuestions = interview?.questionCount || 5;
+  const minutes = Math.floor((timeLeft || 0) / 60);
+  const seconds = (timeLeft || 0) % 60;
+  const isLastQuestion = currentIndex >= maxQuestions - 1 || isInterviewComplete;
+  const isBusy = isProcessing || isFetchingFollowUp;
 
   return (
     <div className="container max-w-4xl py-8">
@@ -284,7 +357,7 @@ export default function InterviewScreen() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium">
-            Question {currentIndex + 1} of {questions.length}
+            Question {currentIndex + 1} {!isInterviewComplete && `of ~${maxQuestions}`}
           </span>
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-muted-foreground" />
@@ -294,9 +367,9 @@ export default function InterviewScreen() {
           </div>
         </div>
         <div className="w-full bg-muted rounded-full h-2">
-          <div 
+          <div
             className="bg-primary rounded-full h-2 transition-all duration-500"
-            style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}
+            style={{ width: `${Math.min(((currentIndex + 1) / maxQuestions) * 100, 100)}%` }}
           />
         </div>
       </div>
@@ -304,9 +377,15 @@ export default function InterviewScreen() {
       {/* Question Card */}
       <Card className="mb-6">
         <CardHeader>
-          <Badge variant="outline" className="w-fit mb-2">
-            {interview?.type} Question
-          </Badge>
+          <div className="flex items-center gap-2 mb-2">
+            <Badge variant="outline">{interview?.type} Question</Badge>
+            {currentIndex > 0 && (
+              <Badge variant="secondary" className="gap-1">
+                <Brain className="w-3 h-3" />
+                Adaptive Follow-up
+              </Badge>
+            )}
+          </div>
           <CardTitle className="text-xl leading-relaxed">
             {currentQuestion?.text}
           </CardTitle>
@@ -325,6 +404,7 @@ export default function InterviewScreen() {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               className="min-h-[200px] text-base leading-relaxed resize-none"
+              disabled={isBusy}
             />
             <div className="absolute bottom-3 right-3 flex items-center gap-2">
               <Button
@@ -332,6 +412,7 @@ export default function InterviewScreen() {
                 size="sm"
                 onClick={toggleRecording}
                 className="gap-2"
+                disabled={isBusy}
               >
                 {isRecording ? (
                   <>
@@ -353,6 +434,11 @@ export default function InterviewScreen() {
             <p className="text-xs text-muted-foreground">
               {answer.split(/\s+/).filter(Boolean).length} words
             </p>
+            {currentIndex > 0 && (
+              <p className="text-xs text-muted-foreground italic">
+                Follow-up based on your previous answer
+              </p>
+            )}
           </div>
         </CardContent>
 
@@ -365,32 +451,37 @@ export default function InterviewScreen() {
                 setAnswer(answers[currentIndex - 1]?.answer || '');
               }
             }}
-            disabled={currentIndex === 0}
+            disabled={currentIndex === 0 || isBusy}
           >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Previous
           </Button>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={handleNext} disabled={isProcessing}>
+            <Button variant="ghost" onClick={handleNext} disabled={isBusy}>
               <SkipForward className="w-4 h-4 mr-2" />
               Skip
             </Button>
-            <Button onClick={handleNext} disabled={isProcessing || !answer.trim()}>
-              {isProcessing ? (
+            <Button onClick={handleNext} disabled={isBusy || !answer.trim()}>
+              {isFetchingFollowUp ? (
+                <>
+                  <Brain className="w-4 h-4 mr-2 animate-pulse" />
+                  Thinking...
+                </>
+              ) : isProcessing ? (
                 <>
                   Submitting...
                   <Loader2 className="w-4 h-4 ml-2 animate-spin" />
                 </>
-              ) : currentIndex < questions.length - 1 ? (
-                <>
-                  Next
-                  <Send className="w-4 h-4 ml-2" />
-                </>
-              ) : (
+              ) : isLastQuestion ? (
                 <>
                   Complete
                   <CheckCircle2 className="w-4 h-4 ml-2" />
+                </>
+              ) : (
+                <>
+                  Next
+                  <Send className="w-4 h-4 ml-2" />
                 </>
               )}
             </Button>
@@ -400,4 +491,3 @@ export default function InterviewScreen() {
     </div>
   );
 }
-

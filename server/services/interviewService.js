@@ -1,4 +1,4 @@
-import { generateQuestions, generateFeedback } from './gemini.js';
+import { generateQuestions, generateFollowUp, generateFeedback } from './gemini.js';
 import {
   listInterviewsByUser,
   getStatsByUser,
@@ -96,7 +96,8 @@ export async function generateInterviewQuestions(userId, id) {
     return currentQuestions;
   }
 
-  console.log(`[SERVICE:interview] 🤖 Invoking Gemini to generate ${interview.questionCount || 5} questions for role="${interview.role}", type="${interview.type}", level="${interview.experience}"...`);
+  console.log(`[SERVICE:interview] 🤖 Generating opening question for role="${interview.role}", type="${interview.type}", level="${interview.experience}"...`);
+  // generateQuestions now returns a 1-element array (opening question only)
   const questions = await generateQuestions(
     interview.role,
     interview.type,
@@ -106,13 +107,83 @@ export async function generateInterviewQuestions(userId, id) {
     interview.questionCount
   );
 
-  console.log(`[SERVICE:interview] 💾 Saving generated ${questions.length} questions to interview "${id}" and transitioning status to 'in_progress'...`);
+  console.log(`[SERVICE:interview] 💾 Saving opening question to interview "${id}" and transitioning status to 'in_progress'...`);
   interview.questions = questions;
   interview.status = 'in_progress';
   await saveInterviewRecord(userId, interview);
 
-  console.log(`[SERVICE:interview] ✅ Questions successfully generated and saved for interview "${id}"`);
+  console.log(`[SERVICE:interview] ✅ Opening question generated and saved for interview "${id}"`);
   return questions;
+}
+
+/**
+ * Generates an adaptive follow-up question based on conversation history.
+ * Called after the candidate answers each question (except the last).
+ * Also persists the answered question+answer into conversationHistory.
+ */
+export async function generateFollowUpQuestion(userId, id, { previousQuestion, previousAnswer, questionIndex }) {
+  console.log(`[SERVICE:interview] 🔁 generateFollowUpQuestion: interview "${id}", questionIndex=${questionIndex}`);
+
+  if (typeof previousQuestion !== 'string' || !previousQuestion.trim()) {
+    throw createHttpError(400, 'previousQuestion is required');
+  }
+  if (typeof questionIndex !== 'number' || questionIndex < 0) {
+    throw createHttpError(400, 'questionIndex must be a non-negative number');
+  }
+
+  const interview = await getInterviewById(userId, id);
+  const maxQuestions = interview.questionCount || 5;
+
+  // Build updated conversation history (cap at 10 to stay within token budget)
+  const existingHistory = interview.conversationHistory || [];
+  const updatedHistory = [
+    ...existingHistory,
+    {
+      question: previousQuestion,
+      answer: (previousAnswer || '').trim(),
+      order: questionIndex,
+    },
+  ].slice(-10);
+
+  // If we've reached the question limit, signal completion without AI call
+  if (questionIndex >= maxQuestions - 1) {
+    console.log(`[SERVICE:interview] ✅ Interview "${id}" reached questionCount=${maxQuestions}. Signaling completion.`);
+    // Persist the updated conversation history
+    await saveInterviewRecord(userId, { ...interview, conversationHistory: updatedHistory });
+    return { isComplete: true, question: null };
+  }
+
+  console.log(`[SERVICE:interview] 🤖 Requesting adaptive follow-up from Gemini (${updatedHistory.length} turns so far)...`);
+  const followUp = await generateFollowUp({
+    role: interview.role,
+    type: interview.type,
+    experience: interview.experience,
+    conversationHistory: updatedHistory,
+    questionIndex: questionIndex + 1, // next question index
+    maxQuestions,
+  });
+
+  // Append the new question to the interview's questions array and save updated history
+  const newQuestion = {
+    text: followUp.text,
+    type: followUp.type || interview.type,
+    context: followUp.context || null,
+    difficulty: followUp.difficulty || 'medium',
+    order: (interview.questions || []).length + 1,
+  };
+
+  const updatedQuestions = [...(interview.questions || []), newQuestion];
+  await saveInterviewRecord(userId, {
+    ...interview,
+    questions: updatedQuestions,
+    conversationHistory: updatedHistory,
+  });
+
+  console.log(`[SERVICE:interview] ✅ Follow-up question saved to interview "${id}" (isComplete=${followUp.isComplete})`);
+  return {
+    question: newQuestion,
+    isComplete: followUp.isComplete || false,
+  };
 }
 
 export async function submitInterviewAnswers(userId, id, answers) {
@@ -134,7 +205,11 @@ export async function submitInterviewAnswers(userId, id, answers) {
   }));
 
   console.log(`[SERVICE:interview] 🤖 Requesting AI feedback and scoring from Gemini...`);
-  const feedback = await generateFeedback(interviewQuestions, interview.answers);
+  const feedback = await generateFeedback(interviewQuestions, interview.answers, {
+    role: interview.role,
+    type: interview.type,
+    experience: interview.experience,
+  });
 
   interview.feedback = {
     strengths: feedback.strengths || [],

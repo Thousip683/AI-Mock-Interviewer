@@ -7,6 +7,7 @@ import {
   getInterviewHandler,
   getInterviewQuestionsHandler,
   generateInterviewQuestionsHandler,
+  generateFollowUpHandler,
   submitInterviewAnswersHandler,
   getInterviewFeedbackHandler,
   deleteInterviewHandler,
@@ -20,6 +21,10 @@ router.post('/', auth, createInterviewHandler);
 router.get('/:id', auth, getInterviewHandler);
 router.get('/:id/questions', auth, getInterviewQuestionsHandler);
 router.post('/:id/generate', auth, generateInterviewQuestionsHandler);
+// Adaptive follow-up: POST /interviews/:id/followup
+// Body: { previousQuestion, previousAnswer, questionIndex }
+// Returns: { question: {...}, isComplete: boolean }
+router.post('/:id/followup', auth, generateFollowUpHandler);
 router.post('/:id/submit', auth, submitInterviewAnswersHandler);
 router.get('/:id/feedback', auth, getInterviewFeedbackHandler);
 router.delete('/:id', auth, deleteInterviewHandler);

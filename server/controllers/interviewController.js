@@ -5,6 +5,7 @@ import {
   getInterviewById,
   getInterviewQuestions,
   generateInterviewQuestions,
+  generateFollowUpQuestion,
   submitInterviewAnswers,
   getInterviewFeedback,
   deleteInterview,
@@ -55,10 +56,29 @@ export const getInterviewQuestionsHandler = asyncHandler('getInterviewQuestionsH
 });
 
 export const generateInterviewQuestionsHandler = asyncHandler('generateInterviewQuestionsHandler', async (req, res) => {
-  console.log(`[CONTROLLER:interview] ⚡ Request to generate questions for interview ID: "${req.params.id}"`);
+  console.log(`[CONTROLLER:interview] ⚡ Request to generate opening question for interview ID: "${req.params.id}"`);
   const questions = await generateInterviewQuestions(req.userId, req.params.id);
-  console.log(`[CONTROLLER:interview] 📤 Returning ${questions.length} generated questions for interview ID: "${req.params.id}"`);
+  console.log(`[CONTROLLER:interview] 📤 Returning ${questions.length} question(s) for interview ID: "${req.params.id}"`);
   res.json(questions);
+});
+
+/**
+ * POST /interviews/:id/followup
+ * Body: { previousQuestion, previousAnswer, questionIndex }
+ * Response: { question: {...}, isComplete: boolean }
+ */
+export const generateFollowUpHandler = asyncHandler('generateFollowUpHandler', async (req, res) => {
+  const { previousQuestion, previousAnswer, questionIndex } = req.body;
+  console.log(`[CONTROLLER:interview] 🔁 Follow-up requested for interview "${req.params.id}", questionIndex=${questionIndex}`);
+
+  const result = await generateFollowUpQuestion(req.userId, req.params.id, {
+    previousQuestion,
+    previousAnswer,
+    questionIndex: Number(questionIndex),
+  });
+
+  console.log(`[CONTROLLER:interview] 📤 Follow-up result: isComplete=${result.isComplete}, question="${result.question?.text?.substring(0, 60) || 'N/A'}..."`);
+  res.json(result);
 });
 
 export const submitInterviewAnswersHandler = asyncHandler('submitInterviewAnswersHandler', async (req, res) => {

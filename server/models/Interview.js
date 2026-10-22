@@ -28,6 +28,14 @@ const interviewSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'in_progress', 'completed'], default: 'pending' },
   questions: [questionSchema],
   answers: [answerSchema],
+  // Full conversation history for adaptive follow-up AI context (capped at 10 exchanges)
+  conversationHistory: [
+    {
+      question: { type: String, required: true },
+      answer: { type: String, default: '' },
+      order: { type: Number, required: true },
+    },
+  ],
   score: { type: Number, default: 0 },
   duration: { type: Number, default: 0 },
   feedback: {
@@ -49,4 +57,3 @@ const interviewSchema = new mongoose.Schema({
 interviewSchema.index({ clerkUserId: 1, createdAt: -1 });
 
 export default mongoose.model('Interview', interviewSchema);
-
