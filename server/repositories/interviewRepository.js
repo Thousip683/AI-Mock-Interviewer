@@ -1,0 +1,297 @@
+import { randomUUID } from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
+import Interview from '../models/Interview.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const storePath = path.join(__dirname, '..', 'data', 'interviews.json');
+
+async function ensureStore() {
+  await fs.mkdir(path.dirname(storePath), { recursive: true });
+
+  try {
+    await fs.access(storePath);
+  } catch {
+    console.log('[REPOSITORY] 📁 Initializing local JSON fallback storage at:', storePath);
+    await fs.writeFile(storePath, '[]', 'utf8');
+  }
+}
+
+async function readStore() {
+  await ensureStore();
+  const raw = await fs.readFile(storePath, 'utf8');
+  return JSON.parse(raw || '[]');
+}
+
+async function writeStore(interviews) {
+  await ensureStore();
+  await fs.writeFile(storePath, JSON.stringify(interviews, null, 2), 'utf8');
+}
+
+function isMongoReady() {
+  return mongoose.connection.readyState === 1;
+}
+
+function toPlain(doc) {
+  return typeof doc?.toObject === 'function' ? doc.toObject() : doc;
+}
+
+function normalizeInterview(interview) {
+  const createdAt = interview.createdAt ? new Date(interview.createdAt) : new Date();
+  const updatedAt = interview.updatedAt ? new Date(interview.updatedAt) : new Date();
+  const completedAt = interview.completedAt ? new Date(interview.completedAt) : null;
+
+  return {
+    ...interview,
+    _id: interview._id || interview.id,
+    id: interview.id || interview._id,
+    createdAt,
+    updatedAt,
+    completedAt,
+  };
+}
+
+export async function listInterviewsByUser(userId) {
+  const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
+  console.log(`[REPOSITORY] 📋 listInterviewsByUser: Querying interviews for userId: "${userId}" via ${storage}`);
+
+  if (isMongoReady()) {
+    const interviews = await Interview.find({ clerkUserId: userId })
+      .select('role type status score duration createdAt')
+      .sort({ createdAt: -1 });
+
+    console.log(`[REPOSITORY] ✅ listInterviewsByUser: Found ${interviews.length} interviews in MongoDB for user: "${userId}"`);
+    return interviews.map(toPlain);
+  }
+
+  const interviews = await readStore();
+  const userInterviews = interviews
+    .filter((interview) => interview.clerkUserId === userId)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map((interview) => ({
+      _id: interview._id,
+      role: interview.role,
+      type: interview.type,
+      status: interview.status,
+      score: interview.score,
+      duration: interview.duration,
+      createdAt: interview.createdAt,
+    }));
+
+  console.log(`[REPOSITORY] ✅ listInterviewsByUser: Found ${userInterviews.length} interviews in Local JSON Store for user: "${userId}"`);
+  return userInterviews;
+}
+
+export async function getStatsByUser(userId) {
+  const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
+  console.log(`[REPOSITORY] 📊 getStatsByUser: Calculating statistics for userId: "${userId}" via ${storage}`);
+
+  if (isMongoReady()) {
+    const stats = await Interview.aggregate([
+      { $match: { clerkUserId: userId } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          averageScore: { $avg: '$score' },
+        },
+      },
+    ]);
+
+    const result = stats[0] || { total: 0, completed: 0, averageScore: 0 };
+    console.log(`[REPOSITORY] ✅ getStatsByUser: MongoDB stats: Total=${result.total}, Completed=${result.completed}, AvgScore=${Math.round(result.averageScore || 0)}`);
+    return result;
+  }
+
+  const interviews = await readStore();
+  const userInterviews = interviews.filter((interview) => interview.clerkUserId === userId);
+  const completed = userInterviews.filter((interview) => interview.status === 'completed');
+  const averageScore = completed.length
+    ? completed.reduce((sum, interview) => sum + (interview.score || 0), 0) / completed.length
+    : 0;
+
+  const result = {
+    total: userInterviews.length,
+    completed: completed.length,
+    averageScore,
+  };
+  console.log(`[REPOSITORY] ✅ getStatsByUser: Local JSON stats: Total=${result.total}, Completed=${result.completed}, AvgScore=${Math.round(averageScore)}`);
+  return result;
+}
+
+export async function createInterviewRecord(userId, payload) {
+  const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
+  console.log(`[REPOSITORY] ➕ createInterviewRecord: Creating new interview for userId: "${userId}", role: "${payload.role}" via ${storage}`);
+
+  const interviewData = {
+    clerkUserId: userId,
+    role: payload.role,
+    type: payload.type,
+    experience: payload.experience,
+    jobDescription: payload.jobDescription,
+    focusArea: payload.focusArea,
+    questionCount: payload.questionCount || 5,
+    status: 'pending',
+  };
+
+  if (isMongoReady()) {
+    try {
+      const interview = new Interview(interviewData);
+      await interview.save();
+      console.log(`[REPOSITORY] ✅ createInterviewRecord: Successfully saved to MongoDB with _id: "${interview._id}"`);
+      return interview.toObject();
+    } catch (err) {
+      console.error(`[REPOSITORY] ❌ createInterviewRecord MongoDB error: ${err.message}`, err);
+      throw err;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const interview = normalizeInterview({
+    _id: randomUUID(),
+    ...interviewData,
+    questions: [],
+    answers: [],
+    score: 0,
+    duration: 0,
+    feedback: {
+      strengths: [],
+      improvements: [],
+      technicalScore: 0,
+      communicationScore: 0,
+      confidenceScore: 0,
+      relevanceScore: 0,
+      depthScore: 0,
+      overallFeedback: '',
+    },
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  });
+
+  const interviews = await readStore();
+  interviews.push(interview);
+  await writeStore(interviews);
+
+  console.log(`[REPOSITORY] ✅ createInterviewRecord: Successfully saved to Local JSON Store with _id: "${interview._id}"`);
+  return interview;
+}
+
+export async function getInterviewRecord(userId, interviewId) {
+  const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
+  console.log(`[REPOSITORY] 🔍 getInterviewRecord: Looking up interviewId: "${interviewId}" for userId: "${userId}" via ${storage}`);
+
+  if (isMongoReady()) {
+    const interview = await Interview.findOne({ _id: interviewId, clerkUserId: userId });
+    if (!interview) {
+      console.warn(`[REPOSITORY] ⚠️ getInterviewRecord: No interview found in MongoDB with id: "${interviewId}" for userId: "${userId}"`);
+      return null;
+    }
+    console.log(`[REPOSITORY] ✅ getInterviewRecord: Found interview "${interviewId}" (status: "${interview.status}", questions: ${interview.questions?.length || 0})`);
+    return interview.toObject();
+  }
+
+  const interviews = await readStore();
+  const interview = interviews.find(
+    (item) => item._id === interviewId && item.clerkUserId === userId
+  );
+
+  if (!interview) {
+    console.warn(`[REPOSITORY] ⚠️ getInterviewRecord: No interview found in Local JSON Store with id: "${interviewId}" for userId: "${userId}"`);
+    return null;
+  }
+
+  console.log(`[REPOSITORY] ✅ getInterviewRecord: Found interview in Local JSON Store (status: "${interview.status}")`);
+  return normalizeInterview(interview);
+}
+
+export async function saveInterviewRecord(userId, interview) {
+  const interviewId = interview._id || interview.id;
+  const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
+  console.log(`[REPOSITORY] 💾 saveInterviewRecord: Updating interview "${interviewId}" (status: "${interview.status}") via ${storage}`);
+
+  if (isMongoReady()) {
+    try {
+      const existing = await Interview.findOne({ _id: interviewId, clerkUserId: userId });
+
+      if (!existing) {
+        console.warn(`[REPOSITORY] ⚠️ saveInterviewRecord: Record not found in MongoDB for id "${interviewId}" and user "${userId}"`);
+        return null;
+      }
+
+      // Safe update: strip version keys and immutable IDs to avoid Mongoose VersionError
+      const updateData = { ...interview };
+      delete updateData._id;
+      delete updateData.id;
+      delete updateData.__v;
+      delete updateData.createdAt;
+
+      Object.assign(existing, updateData, {
+        clerkUserId: userId,
+      });
+
+      await existing.save();
+      console.log(`[REPOSITORY] ✅ saveInterviewRecord: Successfully updated interview "${interviewId}" in MongoDB`);
+      return existing.toObject();
+    } catch (err) {
+      console.error(`[REPOSITORY] ❌ saveInterviewRecord MongoDB error for interview "${interviewId}": ${err.message}`, err);
+      throw err;
+    }
+  }
+
+  const interviews = await readStore();
+  const index = interviews.findIndex(
+    (item) => item._id === interviewId && item.clerkUserId === userId
+  );
+
+  if (index === -1) {
+    console.warn(`[REPOSITORY] ⚠️ saveInterviewRecord: Record not found in Local JSON Store for id "${interviewId}" and user "${userId}"`);
+    return null;
+  }
+
+  const nextInterview = normalizeInterview({
+    ...interviews[index],
+    ...interview,
+    clerkUserId: userId,
+    updatedAt: new Date().toISOString(),
+  });
+
+  interviews[index] = nextInterview;
+  await writeStore(interviews);
+
+  console.log(`[REPOSITORY] ✅ saveInterviewRecord: Successfully updated interview "${interviewId}" in Local JSON Store`);
+  return nextInterview;
+}
+
+export async function deleteInterviewRecord(userId, interviewId) {
+  const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
+  console.log(`[REPOSITORY] 🗑️ deleteInterviewRecord: Deleting interview "${interviewId}" for userId: "${userId}" via ${storage}`);
+
+  if (isMongoReady()) {
+    const deleted = await Interview.findOneAndDelete({ _id: interviewId, clerkUserId: userId });
+    if (!deleted) {
+      console.warn(`[REPOSITORY] ⚠️ deleteInterviewRecord: Interview "${interviewId}" not found in MongoDB`);
+      return null;
+    }
+    console.log(`[REPOSITORY] ✅ deleteInterviewRecord: Deleted interview "${interviewId}" from MongoDB`);
+    return deleted.toObject();
+  }
+
+  const interviews = await readStore();
+  const index = interviews.findIndex(
+    (item) => item._id === interviewId && item.clerkUserId === userId
+  );
+
+  if (index === -1) {
+    console.warn(`[REPOSITORY] ⚠️ deleteInterviewRecord: Interview "${interviewId}" not found in Local JSON Store`);
+    return null;
+  }
+
+  const [deleted] = interviews.splice(index, 1);
+  await writeStore(interviews);
+  console.log(`[REPOSITORY] ✅ deleteInterviewRecord: Deleted interview "${interviewId}" from Local JSON Store`);
+  return normalizeInterview(deleted);
+}
