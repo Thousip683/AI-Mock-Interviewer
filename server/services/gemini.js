@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 
-// gemini-2.0-flash: stable, fast, reliable JSON output without empty-response issues
-const GEMINI_MODEL = 'gemini-2.0-flash';
+// Available models with automatic failover in case of 503 high demand or quota limits
+const CANDIDATE_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest'];
 
 // Safety settings — BLOCK_NONE prevents silent content blocks that cause empty responses
 const SAFETY_SETTINGS = [
@@ -12,33 +12,56 @@ const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
 ];
 
-function getModel() {
+function getModel(modelName = CANDIDATE_MODELS[0]) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn('[GEMINI] ⚠️ GEMINI_API_KEY is not set! AI generation will fall back to templates.');
   }
   const genAI = new GoogleGenerativeAI(apiKey || '');
-  console.log(`[GEMINI] 🔧 Using model: ${GEMINI_MODEL}`);
   return genAI.getGenerativeModel({
-    model: GEMINI_MODEL,
+    model: modelName,
     safetySettings: SAFETY_SETTINGS,
   });
 }
 
-/** Call Gemini and return parsed JSON. Strips markdown fences. */
+/** Call Gemini and return parsed JSON text. Strips markdown fences safely with retry and multi-model fallback. */
 async function callGemini(prompt, label) {
-  const model = getModel();
-  console.log(`[GEMINI] 📡 Dispatching prompt [${label}] to ${GEMINI_MODEL}...`);
-  const startTime = Date.now();
-  const result = await model.generateContent(prompt);
-  const response = await result.response;
-  let text = response.text();
-  const duration = Date.now() - startTime;
-  console.log(`[GEMINI] 📥 [${label}] response received in ${duration}ms (${text.length} chars)`);
+  let lastError = null;
 
-  // Strip markdown code fences if present
-  text = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
-  return text;
+  for (const modelName of CANDIDATE_MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const model = getModel(modelName);
+        console.log(`[GEMINI] 📡 Dispatching prompt [${label}] to ${modelName} (attempt ${attempt})...`);
+        const startTime = Date.now();
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        let text = response.text();
+        const duration = Date.now() - startTime;
+        console.log(`[GEMINI] 📥 [${label}] response received from ${modelName} in ${duration}ms (${text.length} chars)`);
+
+        // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+        text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/m, '').trim();
+        if (text.startsWith('```')) {
+          text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/m, '').trim();
+        }
+        return text;
+      } catch (err) {
+        lastError = err;
+        console.warn(`[GEMINI] ⚠️ [${label}] error on ${modelName} (attempt ${attempt}): ${err.message}`);
+
+        // If transient spike (503 / 429), pause before retry
+        const isTransient = err.message?.includes('503') || err.message?.includes('429') || err.message?.includes('FetchError') || err.message?.includes('high demand');
+        if (attempt === 1 && isTransient) {
+          await new Promise((r) => setTimeout(r, 1200));
+        } else {
+          break; // move to next candidate model
+        }
+      }
+    }
+  }
+
+  throw lastError || new Error(`All Gemini models failed for [${label}]`);
 }
 
 // ─── PROMPT COMPONENTS ───────────────────────────────────────────────────────
@@ -322,31 +345,65 @@ function getFallbackFollowUp(role, type, questionIndex) {
 }
 
 function getFallbackFeedback(questions, answers) {
-  console.log(`[GEMINI] 📋 Serving default template feedback for ${questions.length} questions`);
-  return {
-    questionFeedback: questions.map((q, i) => ({
+  console.log(`[GEMINI] 📋 Serving dynamic evaluation fallback for ${questions.length} questions`);
+
+  const questionFeedback = questions.map((q, i) => {
+    const candidateAnswer = (answers[i]?.answer || '').trim();
+    const wordCount = candidateAnswer.split(/\s+/).filter(Boolean).length;
+
+    let score = 65;
+    let feedback = '';
+    let tips = '';
+
+    if (wordCount === 0) {
+      score = 25;
+      feedback = 'No substantive answer was provided. Even when unsure, outline initial assumptions or high-level approaches.';
+      tips = 'Attempt every question by breaking down the core problem and stating relevant fundamentals.';
+    } else if (wordCount < 15) {
+      score = 55;
+      feedback = 'The response states an initial thought but is quite brief. Senior technical roles require step-by-step reasoning and technical specifics.';
+      tips = 'Elaborate with concrete tools, architecture components, and specific operational steps.';
+    } else if (wordCount < 40) {
+      score = 72;
+      feedback = 'Solid initial direction and appropriate intuition. To elevate this response, address edge cases, failure modes, and metrics.';
+      tips = 'Proactively mention how you would monitor this in production and handle sudden scale or dependency failure.';
+    } else {
+      score = 82;
+      feedback = 'Detailed and thoughtful response covering key considerations. Further refine by quantifying performance implications and explicit trade-offs.';
+      tips = 'Emphasize measurable trade-offs (e.g. latency vs consistency, cost vs availability).';
+    }
+
+    return {
       question: q.text,
-      answer: answers[i]?.answer || '',
-      score: 70,
-      feedback: 'Your answer shows reasonable understanding. Consider providing more specific examples and structuring your response with clear reasoning.',
-      tips: 'Try to explicitly state trade-offs and mention how you would handle failure scenarios.',
-    })),
+      answer: candidateAnswer,
+      score,
+      feedback,
+      tips,
+    };
+  });
+
+  const totalScore = Math.round(
+    questionFeedback.reduce((sum, item) => sum + item.score, 0) / (questionFeedback.length || 1)
+  );
+
+  return {
+    questionFeedback,
     strengths: [
-      'Demonstrated ability to communicate technical ideas',
-      'Showed problem-solving initiative',
-      'Clear understanding of basic concepts',
+      'Engaged constructively with technical problem scenarios',
+      'Demonstrated foundational problem-solving awareness',
+      'Communicated answers with directness',
     ],
     improvements: [
-      'Provide more specific examples from real experience',
-      'Quantify impact of solutions with concrete metrics',
-      'Discuss trade-offs and failure modes proactively',
+      'Proactively discuss edge cases, failure modes, and resiliency',
+      'Incorporate specific protocols, tools, and quantitative metrics into answers',
+      'Address architectural trade-offs between competing approaches',
     ],
-    technicalScore: 70,
-    communicationScore: 72,
-    confidenceScore: 65,
-    relevanceScore: 70,
-    depthScore: 65,
-    overallFeedback: 'You demonstrated solid fundamentals. Focus on adding depth to answers with concrete trade-offs, failure scenarios, and measurable outcomes.',
-    score: 70,
+    technicalScore: Math.min(100, totalScore + 2),
+    communicationScore: Math.min(100, totalScore + 4),
+    confidenceScore: Math.min(100, Math.max(50, totalScore - 5)),
+    relevanceScore: Math.min(100, totalScore + 3),
+    depthScore: Math.max(45, totalScore - 6),
+    overallFeedback: `Overall interview score: ${totalScore}/100. You demonstrated a solid foundation across the questions asked. To reach senior/staff level, focus on systematic trade-off analysis, proactive edge case handling, and architectural depth.`,
+    score: totalScore,
   };
 }
