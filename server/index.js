@@ -1,10 +1,18 @@
-import 'dotenv/config';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+import dotenv from 'dotenv';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: resolve(__dirname, '.env') });
 import express from 'express';
 import cors from 'cors';
 import { clerkMiddleware } from '@clerk/express';
 
 import connectDB from './config/db.js';
 import interviewRoutes from './routes/interviews.js';
+import liveRoutes from './routes/live.js';
+import { attachLiveServer } from './services/liveSocket.js';
 
 
 const app = express();
@@ -54,6 +62,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/api/interviews', interviewRoutes);
+app.use('/api/interviews', liveRoutes);
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -80,6 +89,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server ready and listening on http://localhost:${PORT}`);
 });
+attachLiveServer(server);
