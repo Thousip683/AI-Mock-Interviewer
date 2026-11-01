@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useUser, useClerk, SignedIn, SignedOut } from '@clerk/clerk-react';
+import { useUser, useClerk, Show } from '@clerk/react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
@@ -20,7 +20,19 @@ export default function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const { user } = useUser();
   const { signOut } = useClerk();
+  const [authError, setAuthError] = useState('');
   const location = useLocation();
+  useEffect(() => { setMobileOpen(false); setDropdownOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    const close = event => { if (event.key === 'Escape') { setDropdownOpen(false); setMobileOpen(false); } };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, []);
+  const logOut = async () => {
+    setAuthError('');
+    try { await signOut({ redirectUrl: '/' }); }
+    catch { setAuthError('Sign out failed. Please try again.'); }
+  };
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -40,10 +52,10 @@ export default function Navbar() {
 
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-1">
-          <SignedIn>
+          <Show when="signed-in">
             {navLinks.map((link) => {
               const Icon = link.icon;
-              const isActive = location.pathname === link.path;
+              const isActive = location.pathname === link.path || location.pathname.startsWith(`${link.path}/`);
               return (
                 <Link
                   key={link.path}
@@ -60,26 +72,23 @@ export default function Navbar() {
                 </Link>
               );
             })}
-          </SignedIn>
+          </Show>
         </div>
 
         {/* Auth Section */}
         <div className="flex items-center gap-3">
-          <SignedOut>
+          <Show when="signed-out">
             <div className="flex items-center gap-2">
-              <Link to="/login">
-                <Button variant="ghost">Sign In</Button>
-              </Link>
-              <Link to="/login">
-                <Button variant="gradient" size="sm">Get Started</Button>
-              </Link>
+              <Button variant="ghost" asChild><Link to="/login">Sign In</Link></Button>
+              <Button variant="gradient" size="sm" asChild><Link to="/sign-up">Get Started</Link></Button>
             </div>
-          </SignedOut>
+          </Show>
 
-          <SignedIn>
+          <Show when="signed-in">
             {/* User Dropdown */}
             <div className="relative">
               <button
+                aria-label="Account menu" aria-expanded={dropdownOpen} aria-controls="account-menu"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-accent transition-colors"
               >
@@ -95,7 +104,7 @@ export default function Navbar() {
               {dropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border bg-popover p-1 shadow-lg animate-in slide-in-from-top-2">
+                  <div id="account-menu" className="absolute right-0 top-full mt-1 z-50 w-56 rounded-xl border bg-popover p-1 shadow-lg animate-in slide-in-from-top-2">
                     <div className="px-2 py-1.5 mb-1">
                       <p className="text-sm font-medium truncate">{user?.fullName || 'User'}</p>
                       <p className="text-xs text-muted-foreground truncate">
@@ -112,7 +121,7 @@ export default function Navbar() {
                       Dashboard
                     </Link>
                     <button
-                      onClick={() => signOut()}
+                      onClick={logOut}
                       className="flex w-full items-center gap-2 px-2 py-1.5 text-sm rounded-lg hover:bg-accent transition-colors text-destructive"
                     >
                       <LogOut className="w-4 h-4" />
@@ -122,10 +131,11 @@ export default function Navbar() {
                 </>
               )}
             </div>
-          </SignedIn>
+          </Show>
 
           {/* Mobile menu button */}
           <button
+            aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={mobileOpen} aria-controls="mobile-navigation"
             className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors"
             onClick={() => setMobileOpen(!mobileOpen)}
           >
@@ -134,14 +144,16 @@ export default function Navbar() {
         </div>
       </div>
 
+      {authError && <p role="alert" className="container py-2 text-sm text-destructive">{authError}</p>}
       {/* Mobile Nav */}
       {mobileOpen && (
-        <div className="md:hidden border-t bg-background animate-in slide-in-from-top-2">
+        <div id="mobile-navigation" className="md:hidden border-t bg-background animate-in slide-in-from-top-2">
           <div className="container py-4 space-y-1">
-            <SignedIn>
+            <Show when="signed-out"><Link to="/login" className="block rounded-lg px-3 py-2.5">Sign In</Link><Link to="/sign-up" className="block rounded-lg px-3 py-2.5">Create account</Link></Show>
+            <Show when="signed-in">
               {navLinks.map((link) => {
                 const Icon = link.icon;
-                const isActive = location.pathname === link.path;
+                const isActive = location.pathname === link.path || location.pathname.startsWith(`${link.path}/`);
                 return (
                   <Link
                     key={link.path}
@@ -159,7 +171,7 @@ export default function Navbar() {
                   </Link>
                 );
               })}
-            </SignedIn>
+            </Show>
           </div>
         </div>
       )}

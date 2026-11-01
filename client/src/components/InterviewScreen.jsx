@@ -1,3 +1,4 @@
+import PreparationGuide from '@/components/PreparationGuide';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -26,7 +27,8 @@ export default function InterviewScreen() {
   const [stage, setStage] = useState('loading'); // loading, generating, ready, in_progress, fetching_followup, submitting, error
   const [answers, setAnswers] = useState([]);
   const [timeLeft, setTimeLeft] = useState(null);
-  const [isInterviewComplete, setIsInterviewComplete] = useState(false);
+  const [operationError, setOperationError] = useState('');
+  const actionRef = useRef(false);
   const recognitionRef = useRef(null);
   const timerRef = useRef(null);
   const loadingRef = useRef(false);
@@ -58,6 +60,10 @@ export default function InterviewScreen() {
       // Load existing questions
       const qRes = await api.get(`/interviews/${id}/questions`);
       setQuestions(qRes.data);
+      const savedAnswers = res.data.answers || [];
+      const resumeIndex = Math.min(savedAnswers.length, Math.max(0, qRes.data.length - 1));
+      setAnswers(savedAnswers); setCurrentIndex(resumeIndex);
+      setAnswer(savedAnswers[resumeIndex]?.answer || '');
 
       if (qRes.data.length > 0) {
         setStage('ready');
@@ -69,7 +75,7 @@ export default function InterviewScreen() {
         setStage('ready');
       }
     } catch (err) {
-      console.error('Failed to load interview:', err);
+      setOperationError(err.response?.data?.error || 'Could not load this interview. Please retry from the dashboard.');
       setStage('error');
     } finally {
       loadingRef.current = false;
@@ -101,23 +107,20 @@ export default function InterviewScreen() {
    * 2. Request a follow-up question from the server (adaptive AI).
    * 3. If the server signals isComplete OR we hit max questions → submit.
    */
-  const handleNext = async () => {
+  const advanceInterview = async ({ skip = false } = {}) => {
+    setOperationError('');
+    if (recognitionRef.current) { recognitionRef.current.onresult = null; recognitionRef.current.stop(); setIsRecording(false); }
     if (timerRef.current) clearInterval(timerRef.current);
 
     const currentQuestion = questions[currentIndex];
     const currentAnswer = {
       questionId: currentQuestion._id,
       question: currentQuestion.text,
-      answer: answer.trim(),
+      answer: skip ? '' : answer.trim(),
     };
-    const newAnswers = [...answers, currentAnswer];
+    const newAnswers = [...answers];
+    newAnswers[currentIndex] = currentAnswer;
     setAnswers(newAnswers);
-
-    // If the interview was already flagged complete (from a previous followup response)
-    if (isInterviewComplete) {
-      await submitInterview(newAnswers);
-      return;
-    }
 
     const maxQuestions = interview?.questionCount || 5;
     const nextIndex = currentIndex + 1; // how many questions answered after this one
@@ -134,7 +137,7 @@ export default function InterviewScreen() {
     try {
       const res = await api.post(`/interviews/${id}/followup`, {
         previousQuestion: currentQuestion.text,
-        previousAnswer: answer.trim(),
+        previousAnswer: currentAnswer.answer,
         questionIndex: nextIndex - 1, // 0-based index of the question just answered
       });
 
@@ -144,23 +147,25 @@ export default function InterviewScreen() {
         return;
       }
 
-      // Append the follow-up question and show it
-      setQuestions(prev => {
-        // The server already persisted the question; use what it returned
-        const alreadyPresent = prev.some(q => q.text === res.data.question.text);
-        return alreadyPresent ? prev : [...prev, res.data.question];
-      });
+      setQuestions(previous => { const next = [...previous]; next[nextIndex] = res.data.question; return next; });
       setCurrentIndex(nextIndex);
-      setAnswer('');
+      setAnswer(newAnswers[nextIndex]?.answer || '');
       startTimer(3);
       setStage('in_progress');
     } catch (err) {
       console.error('Failed to get follow-up question:', err);
-      // Graceful degradation: if follow-up fails, just submit with what we have
-      await submitInterview(newAnswers);
+      setOperationError(err.response?.data?.error || 'Could not save your answer or load the next question. Your answer is still here; please retry.');
+      setStage('in_progress'); startTimer(3);
     } finally {
       setIsFetchingFollowUp(false);
     }
+  };
+
+  const handleNext = async (options) => {
+    if (actionRef.current) return;
+    actionRef.current = true;
+    try { await advanceInterview(options); }
+    finally { actionRef.current = false; }
   };
 
   const submitInterview = async (finalAnswers) => {
@@ -173,8 +178,8 @@ export default function InterviewScreen() {
       });
       navigate(`/feedback/${id}`);
     } catch (err) {
-      console.error('Failed to submit answers:', err);
-      setStage('error');
+      setOperationError(err.response?.data?.error || 'Submission failed. Your answers are kept here; select Complete to retry.');
+      setStage('in_progress');
     } finally {
       setIsProcessing(false);
     }
@@ -182,7 +187,7 @@ export default function InterviewScreen() {
 
   const toggleRecording = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in this browser.');
+      setOperationError('Voice dictation is unavailable in this browser. Type your answer or use a browser with SpeechRecognition support.');
       return;
     }
     if (isRecording) stopRecording();
@@ -207,11 +212,13 @@ export default function InterviewScreen() {
     recognition.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
       setIsRecording(false);
+      setOperationError(`Dictation stopped (${event.error}). Your typed answer is still available.`);
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setIsRecording(true);
+    recognition.onend = () => setIsRecording(false);
+    try { recognition.start(); setIsRecording(true); }
+    catch { setOperationError('Microphone could not start. Check browser permissions and try again.'); setIsRecording(false); }
   };
 
   const stopRecording = () => {
@@ -294,7 +301,7 @@ export default function InterviewScreen() {
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-destructive mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Something went wrong</h2>
-          <p className="text-muted-foreground mb-4">Failed to load interview. Please try again.</p>
+          <p className="text-muted-foreground mb-4">{operationError || 'Failed to load interview. Please try again.'}</p>
           <Button onClick={() => navigate('/dashboard')}>Back to Dashboard</Button>
         </div>
       </div>
@@ -317,6 +324,7 @@ export default function InterviewScreen() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            <PreparationGuide interview={interview} />
             <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto mb-6">
               <div className="p-3 rounded-xl bg-muted/50">
                 <p className="text-2xl font-bold text-primary">~{maxQ}</p>
@@ -355,7 +363,7 @@ export default function InterviewScreen() {
   const maxQuestions = interview?.questionCount || 5;
   const minutes = Math.floor((timeLeft || 0) / 60);
   const seconds = (timeLeft || 0) % 60;
-  const isLastQuestion = currentIndex >= maxQuestions - 1 || isInterviewComplete;
+  const isLastQuestion = currentIndex >= maxQuestions - 1;
   const isBusy = isProcessing || isFetchingFollowUp;
 
   return (
@@ -364,7 +372,7 @@ export default function InterviewScreen() {
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium">
-            Question {currentIndex + 1} {!isInterviewComplete && `of ~${maxQuestions}`}
+            Question {currentIndex + 1} {`of ~${maxQuestions}`}
           </span>
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-muted-foreground" />
@@ -381,6 +389,7 @@ export default function InterviewScreen() {
         </div>
       </div>
 
+      {operationError && <p role="alert" className="mb-5 rounded-xl bg-red-50 p-4 text-sm text-red-800">{operationError}</p>}
       {/* Question Card */}
       <Card className="mb-6">
         <CardHeader>
@@ -407,7 +416,7 @@ export default function InterviewScreen() {
           {/* Answer Area */}
           <div className="relative">
             <Textarea
-              placeholder="Type your answer here... (or use voice input)"
+              aria-label="Your answer" placeholder="Type your answer here... (or use voice input)"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               className="min-h-[200px] text-base leading-relaxed resize-none"
@@ -454,8 +463,11 @@ export default function InterviewScreen() {
             variant="ghost"
             onClick={() => {
               if (currentIndex > 0) {
+                if (recognitionRef.current) { recognitionRef.current.onresult = null; recognitionRef.current.stop(); setIsRecording(false); }
+                setAnswers(previous => { const next = [...previous]; next[currentIndex] = { question: questions[currentIndex].text, answer }; return next; });
                 setCurrentIndex(prev => prev - 1);
                 setAnswer(answers[currentIndex - 1]?.answer || '');
+                startTimer(3);
               }
             }}
             disabled={currentIndex === 0 || isBusy}
@@ -465,7 +477,7 @@ export default function InterviewScreen() {
           </Button>
 
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={handleNext} disabled={isBusy}>
+            <Button variant="ghost" onClick={() => handleNext({ skip: true })} disabled={isBusy}>
               <SkipForward className="w-4 h-4 mr-2" />
               Skip
             </Button>

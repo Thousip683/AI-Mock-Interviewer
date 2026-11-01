@@ -202,6 +202,7 @@ export async function getInterviewRecord(userId, interviewId) {
   console.log(`[REPOSITORY] 🔍 getInterviewRecord: Looking up interviewId: "${interviewId}" for userId: "${userId}" via ${storage}`);
 
   if (isMongoReady()) {
+    if (!mongoose.isValidObjectId(interviewId)) return null;
     const interview = await Interview.findOne({ _id: interviewId, clerkUserId: userId });
     if (!interview) {
       console.warn(`[REPOSITORY] ⚠️ getInterviewRecord: No interview found in MongoDB with id: "${interviewId}" for userId: "${userId}"`);

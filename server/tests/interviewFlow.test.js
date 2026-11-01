@@ -100,3 +100,18 @@ describe('adaptive interview completion across service and Gemini', () => {
     expect(record.conversationHistory.at(-1).answer).toBe('Final answer');
   });
 });
+
+it('updates a revisited answer and reuses its existing follow-up instead of duplicating questions', async () => {
+  let record = { _id: 'revisit', clerkUserId: 'user-1', role: 'Developer', type: 'technical', experience: 'mid', questionCount: 3, status: 'in_progress', questions: [{ text: 'First', order: 1 }], answers: [] };
+  getRecord.mockImplementation(async () => structuredClone(record));
+  saveRecord.mockImplementation(async (_, value) => { record = structuredClone(value); return record; });
+  generateContent.mockResolvedValue({ response: { text: () => JSON.stringify({ text: 'Follow-up', type: 'technical', difficulty: 'medium' }) } });
+  const initialCalls = generateContent.mock.calls.length;
+  await generateFollowUpQuestion('user-1', 'revisit', { previousQuestion: 'First', previousAnswer: 'Original', questionIndex: 0 });
+  await generateFollowUpQuestion('user-1', 'revisit', { previousQuestion: 'First', previousAnswer: 'Edited', questionIndex: 0 });
+  expect(record.questions).toHaveLength(2);
+  expect(record.answers).toHaveLength(1);
+  expect(record.answers[0].answer).toBe('Edited');
+  expect(generateContent).toHaveBeenCalledTimes(initialCalls + 1);
+  expect(record.conversationHistory).toHaveLength(1);
+});

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "@clerk/clerk-react";
+import { useAuth } from "@clerk/react";
 import { setGetToken } from "@/lib/api";
 
 export default function AuthProvider({ children }) {

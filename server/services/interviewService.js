@@ -1,5 +1,5 @@
 import { generateQuestions, generateFollowUp, generateFeedback } from './gemini.js';
-import { isLiveBusy } from './liveSessions.js';
+import { isLiveBusy, reserveLive } from './liveSessions.js';
 import {
   listInterviewsByUser,
   getStatsByUser,
@@ -53,20 +53,20 @@ export async function createInterview(userId, payload) {
   if (payload?.mode !== undefined && !['standard', 'live'].includes(payload.mode)) {
     throw createHttpError(400, 'Invalid interview mode');
   }
-  if (payload?.mode === 'live') {
-    const count = Number(payload.questionCount || 5);
-    if (!Number.isInteger(count) || count < 1 || count > 20) throw createHttpError(400, 'Live interviews need between 1 and 20 target questions');
-    for (const field of ['role', 'type', 'experience', 'jobDescription', 'focusArea']) {
-      if (payload[field] !== undefined && typeof payload[field] !== 'string') throw createHttpError(400, `${field} must be text`);
-    }
+  const count = Number(payload?.questionCount ?? 5);
+  if (!Number.isInteger(count) || count < 1 || count > 20) throw createHttpError(400, 'Choose between 1 and 20 questions');
+  for (const [field, limit] of Object.entries({ role: 200, type: 30, experience: 30, jobDescription: 12000, focusArea: 2000 })) {
+    if (payload?.[field] !== undefined && (typeof payload[field] !== 'string' || payload[field].length > limit)) throw createHttpError(400, `${field} must be text of at most ${limit} characters`);
   }
+  if (!['general', 'technical', 'behavioral', 'system-design'].includes(type)) throw createHttpError(400, 'Choose a valid interview type');
+  if (!['entry', 'mid', 'senior', 'lead'].includes(experience)) throw createHttpError(400, 'Choose a valid experience level');
 
-  if (!role || !type || !experience) {
+  if (!role?.trim() || !type || !experience) {
     console.warn(`[SERVICE:interview] ❌ createInterview validation failed: Missing required fields (role: ${role}, type: ${type}, experience: ${experience})`);
     throw createHttpError(400, 'Role, type, and experience are required');
   }
 
-  const created = await createInterviewRecord(userId, payload);
+  const created = await createInterviewRecord(userId, { ...payload, role: role.trim(), questionCount: count });
   console.log(`[SERVICE:interview] ✅ createInterview: Successfully created interview record with ID: "${created._id || created.id}"`);
   return created;
 }
@@ -140,18 +140,23 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
   if (typeof previousQuestion !== 'string' || !previousQuestion.trim()) {
     throw createHttpError(400, 'previousQuestion is required');
   }
-  if (typeof questionIndex !== 'number' || questionIndex < 0) {
-    throw createHttpError(400, 'questionIndex must be a non-negative number');
+  if (!Number.isInteger(questionIndex) || questionIndex < 0) {
+    throw createHttpError(400, 'questionIndex must be a non-negative integer');
   }
 
   const interview = await getInterviewById(userId, id);
   if (interview.mode === 'live') throw createHttpError(400, 'Use the live voice session for this interview');
   const maxQuestions = interview.questionCount || 5;
+  const currentQuestion = interview.questions?.[questionIndex];
+  if (!currentQuestion || previousQuestion !== currentQuestion.text || questionIndex >= maxQuestions) throw createHttpError(400, 'Invalid current question');
+  if (typeof previousAnswer !== 'string') throw createHttpError(400, 'previousAnswer must be text');
+  const draftAnswers = [...(interview.answers || [])];
+  draftAnswers[questionIndex] = { question: currentQuestion.text, answer: previousAnswer.trim(), questionId: currentQuestion._id };
 
   // Build updated conversation history (cap at 10 to stay within token budget)
   const existingHistory = interview.conversationHistory || [];
   const updatedHistory = [
-    ...existingHistory,
+    ...existingHistory.filter(turn => turn.order !== questionIndex),
     {
       question: previousQuestion,
       answer: (previousAnswer || '').trim(),
@@ -163,8 +168,14 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
   if (questionIndex >= maxQuestions - 1) {
     console.log(`[SERVICE:interview] ✅ Interview "${id}" reached questionCount=${maxQuestions}. Signaling completion.`);
     // Persist the updated conversation history
-    await saveInterviewRecord(userId, { ...interview, conversationHistory: updatedHistory });
+    await saveInterviewRecord(userId, { ...interview, answers: draftAnswers, conversationHistory: updatedHistory });
     return { isComplete: true, question: null };
+  }
+
+  const existingNext = interview.questions?.[questionIndex + 1];
+  if (existingNext) {
+    await saveInterviewRecord(userId, { ...interview, answers: draftAnswers, conversationHistory: updatedHistory });
+    return { question: existingNext, isComplete: false };
   }
 
   console.log(`[SERVICE:interview] 🤖 Requesting adaptive follow-up from Gemini (${updatedHistory.length} turns so far)...`);
@@ -190,6 +201,7 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
   await saveInterviewRecord(userId, {
     ...interview,
     questions: updatedQuestions,
+    answers: draftAnswers,
     conversationHistory: updatedHistory,
   });
 
@@ -213,11 +225,14 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
   }
 
   const interviewQuestions = interview.questions || [];
+  if (!interviewQuestions.length || answers.length !== interviewQuestions.length || answers.some(answer => !answer || typeof answer.answer !== 'string' || answer.answer.length > 30000)) {
+    throw createHttpError(400, 'Provide one text answer per question (maximum 30000 characters each)');
+  }
   console.log(`[SERVICE:interview] Mapping ${answers.length} answers against ${interviewQuestions.length} questions for interview "${id}"`);
 
   interview.answers = answers.map((answer, index) => ({
     questionId: interviewQuestions[index]?._id,
-    question: answer.question,
+    question: interviewQuestions[index].text,
     answer: answer.answer,
   }));
 
@@ -228,6 +243,10 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
     experience: interview.experience,
   });
 
+  if (interview.status === 'completed' && feedback.evaluationSource === 'heuristic') {
+    throw createHttpError(503, 'AI evaluation is unavailable. Your existing saved report has been kept. Try again later.');
+  }
+
   interview.feedback = {
     strengths: feedback.strengths || [],
     improvements: feedback.improvements || [],
@@ -237,6 +256,7 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
     relevanceScore: feedback.relevanceScore || 0,
     depthScore: feedback.depthScore || 0,
     overallFeedback: feedback.overallFeedback || '',
+    roadmap: feedback.roadmap || [],
   };
 
   if (feedback.questionFeedback) {
@@ -248,6 +268,12 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
         score: feedback.questionFeedback[index]?.score || 0,
         feedback: feedback.questionFeedback[index]?.feedback || '',
         tips: feedback.questionFeedback[index]?.tips || '',
+        verdict: feedback.questionFeedback[index]?.verdict || '',
+        correctAnswer: feedback.questionFeedback[index]?.correctAnswer || '',
+        missingConcepts: feedback.questionFeedback[index]?.missingConcepts || [],
+        studyPoints: feedback.questionFeedback[index]?.studyPoints || [],
+        summary: feedback.questionFeedback[index]?.summary || '',
+        practiceTask: feedback.questionFeedback[index]?.practiceTask || '',
       };
     });
   }
@@ -256,7 +282,7 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
   interview.evaluationSource = feedback.evaluationSource;
   interview.duration = fromLive ? Math.round((interview.liveDurationSeconds || 0) / 60) : interview.questionCount * 2;
   interview.status = 'completed';
-  interview.completedAt = new Date();
+  interview.completedAt = interview.completedAt || new Date();
 
   console.log(`[SERVICE:interview] 💾 Saving completed interview results: overallScore=${interview.score}, status="completed"`);
   await saveInterviewRecord(userId, interview);
@@ -290,6 +316,12 @@ export async function getInterviewFeedback(userId, id) {
       score: answer.score,
       feedback: answer.feedback,
       tips: answer.tips,
+      verdict: answer.verdict,
+      correctAnswer: answer.correctAnswer,
+      missingConcepts: answer.missingConcepts || [],
+      studyPoints: answer.studyPoints || [],
+      summary: answer.summary,
+      practiceTask: answer.practiceTask,
     })),
     strengths: interview.feedback?.strengths || [],
     improvements: interview.feedback?.improvements || [],
@@ -299,6 +331,7 @@ export async function getInterviewFeedback(userId, id) {
     relevanceScore: interview.feedback?.relevanceScore || 0,
     depthScore: interview.feedback?.depthScore || 0,
     overallFeedback: interview.feedback?.overallFeedback || '',
+    roadmap: interview.feedback?.roadmap || [],
   };
 }
 
@@ -319,4 +352,14 @@ export async function deleteInterview(userId, id) {
 
   console.log(`[SERVICE:interview] ✅ deleteInterview: Interview "${id}" deleted successfully`);
   return interview;
+}
+
+export async function refreshInterviewFeedback(userId, id) {
+  const interview = await getInterviewById(userId, id);
+  if (interview.status !== 'completed') throw createHttpError(400, 'Complete the interview first');
+  const release = reserveLive(id);
+  try {
+    await submitInterviewAnswers(userId, id, interview.answers || [], { fromLive: interview.mode === 'live' });
+    return await getInterviewFeedback(userId, id);
+  } finally { release(); }
 }

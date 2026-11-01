@@ -41,7 +41,7 @@ vi.mock('@google/generative-ai', () => ({
 vi.mock('dotenv/config', () => ({}));
 
 // ─── Import service AFTER mocks are set up ───────────────────────────────────
-const { generateOpeningQuestion, generateFollowUp, generateQuestions, generateFeedback } =
+const { generateOpeningQuestion, generateFollowUp, generateQuestions, generateFeedback, normalizeFeedback, generatePreparation } =
   await import('../services/gemini.js');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -423,5 +423,41 @@ describe('Interview flow invariants', () => {
 
     const wordCount = result.text.split(/\s+/).filter(Boolean).length;
     expect(wordCount).toBeLessThanOrEqual(60);
+  });
+});
+
+describe('detailed report validation', () => {
+  it('preserves zero, clamps scores, uses the actual transcript and keeps study material', () => {
+    const result = normalizeFeedback({ questionFeedback: [
+      { score: 0, question: 'Invented', answer: 'Invented', correctAnswer: 'Use an index for selective queries.', missingConcepts: ['Index write cost'], studyPoints: ['B-tree lookup'], summary: 'Indexes trade writes for reads.', practiceTask: 'Compare query plans.' },
+      { score: 150 },
+    ], technicalScore: -20, roadmap: [{ topic: 'Indexes', summary: 'Read speed versus write cost', keyPoints: ['Indexes need storage'], priority: 'high', steps: ['Read query plans'], successCriteria: 'Explain a measured improvement' }] }, [{ text: 'Explain indexing' }, { text: 'Discuss caching' }], [{ answer: 'I do not know' }, { answer: 'Cache hot reads' }]);
+    expect(result.questionFeedback[0].score).toBe(0);
+    expect(result.questionFeedback[1].score).toBe(100);
+    expect(result.score).toBe(50);
+    expect(result.technicalScore).toBe(0);
+    expect(result.questionFeedback[0]).toMatchObject({ question: 'Explain indexing', answer: 'I do not know', studyPoints: ['B-tree lookup'] });
+    expect(result.roadmap[0].topic).toBe('Indexes');
+    expect(result.roadmap[0].keyPoints).toEqual(['Indexes need storage']);
+    expect(result.roadmap[0].summary).toBe('Read speed versus write cost');
+  });
+  it('rejects missing question evaluations and gives empty answers zero', () => {
+    expect(() => normalizeFeedback({ questionFeedback: [] }, [{ text: 'Q' }], [])).toThrow('Incomplete');
+    expect(normalizeFeedback({ questionFeedback: [{ score: 90 }] }, [{ text: 'Q' }], [{ answer: ' ' }]).score).toBe(0);
+  });
+});
+
+describe('pre-interview preparation', () => {
+  beforeEach(() => mockGenerateContent.mockReset());
+  it('uses the selected seniority and focus and returns only text revision bullets', async () => {
+    mockGeminiResponse({topics:[{topic:'Indexes',summary:'Read/write trade-offs',keyPoints:['Indexes consume storage', 42],practiceTask:'Explain a query plan'}]});
+    const guide = await generatePreparation({role:'Database engineer',experience:'senior',type:'technical',focusArea:'query plans'});
+    expect(mockGenerateContent.mock.calls[0][0]).toContain('query plans');
+    expect(mockGenerateContent.mock.calls[0][0]).toContain('senior');
+    expect(guide.topics[0].keyPoints).toEqual(['Indexes consume storage']);
+  });
+  it('rejects empty guides instead of displaying invented success', async () => {
+    mockGeminiResponse({topics:[{topic:'Missing notes'}]});
+    await expect(generatePreparation({role:'Engineer'})).rejects.toThrow('Study guide unavailable');
   });
 });

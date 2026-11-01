@@ -1,12 +1,14 @@
-import { SignIn as ClerkSignIn, useUser } from '@clerk/clerk-react';
-import { Navigate } from 'react-router-dom';
+import { loginDestination } from '@/lib/navigation';
+import { SignIn as ClerkSignIn, useUser } from '@clerk/react';
+import { Navigate, Link, useLocation } from 'react-router-dom';
 import { GraduationCap } from 'lucide-react';
 
 export default function SignIn() {
   const { isSignedIn } = useUser();
+  const destination = loginDestination(useLocation());
 
   if (isSignedIn) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={destination} replace />;
   }
 
   return (
@@ -14,6 +16,7 @@ export default function SignIn() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
+          <Link to="/" className="mb-5 inline-block text-sm text-primary">Back to home</Link>
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg blur opacity-40" />
@@ -49,13 +52,13 @@ export default function SignIn() {
             }}
             routing="path"
             path="/login"
-            signUpUrl="/sign-up"
-            afterSignInUrl="/dashboard"
+            signUpUrl={`/sign-up?redirect=${encodeURIComponent(destination)}`}
+            forceRedirectUrl={destination} signUpFallbackRedirectUrl="/dashboard"
           />
         </div>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          By signing in, you agree to our Terms of Service and Privacy Policy
+          Authentication is provided by Clerk.
         </p>
       </div>
     </div>

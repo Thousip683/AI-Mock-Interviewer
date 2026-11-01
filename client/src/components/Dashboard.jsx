@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useUser } from '@clerk/clerk-react';
+import { useUser } from '@clerk/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,7 @@ export default function Dashboard() {
   const { user } = useUser();
   const [interviews, setInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
@@ -29,9 +30,11 @@ export default function Dashboard() {
   }, []);
 
   const fetchInterviews = async () => {
+    setLoading(true); setLoadError('');
     try {
       const res = await api.get('/interviews');
       const data = res.data;
+      if (!Array.isArray(data)) throw new Error('Unexpected interview response');
       setInterviews(data);
 
       const completed = data.filter(i => i.status === 'completed');
@@ -43,10 +46,10 @@ export default function Dashboard() {
         total: data.length,
         completed: completed.length,
         averageScore: avgScore,
-        improvement: completed.length > 1 ? Math.min(avgScore, 85) : 0,
+        improvement: completed.length > 1 ? (completed[0].score || 0) - (completed[1].score || 0) : null,
       });
     } catch (err) {
-      console.error('Failed to fetch interviews:', err);
+      setLoadError(err.response?.data?.error || 'Could not load interviews. Check your connection and retry.');
     } finally {
       setLoading(false);
     }
@@ -59,6 +62,8 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  if (loadError) return <div className="container py-16"><h1 className="text-3xl">Unable to load interviews</h1><p role="alert" className="my-5">{loadError}</p><Button onClick={fetchInterviews}>Try again</Button></div>;
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -83,15 +88,17 @@ export default function Dashboard() {
             Here's your interview preparation overview
           </p>
         </div>
-        <Link to="/create-interview">
-          <Button variant="gradient" size="lg" className="group">
+        <Button variant="gradient" size="lg" className="group" asChild><Link to="/create-interview">
             <PlusCircle className="w-5 h-5 mr-2" />
             Start New Interview
             <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </Button>
-        </Link>
+          </Link></Button>
       </div>
 
+      <section className="surface-card flex items-center justify-between gap-6 overflow-hidden rounded-3xl border bg-gradient-to-r from-[#f5e7e6] to-white px-6 py-5 sm:px-8">
+        <div><p className="text-xs font-semibold uppercase tracking-widest text-primary">Your personal studio</p><h2 className="mt-2 text-3xl sm:text-4xl">Make room for your next breakthrough.</h2><p className="mt-2 max-w-xl text-sm leading-7 text-muted-foreground">Start a conversation, revisit your notes, or take the next step on your learning path.</p><Link to="/feedback" className="mt-3 inline-flex items-center gap-2 rounded-lg py-2 text-sm font-semibold text-primary">Revisit your learning <ArrowRight className="h-4 w-4" /></Link></div>
+        <img src="/images/interview-studio.svg" alt="" className="hidden w-44 shrink-0 drop-shadow-xl sm:block" width="176" height="160" />
+      </section>
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-purple-500">
@@ -140,8 +147,8 @@ export default function Dashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Improvement</p>
-                <p className="text-3xl font-bold mt-1">+{stats.improvement}%</p>
+                <p className="text-sm text-muted-foreground">Last score change</p>
+                <p className="text-3xl font-bold mt-1">{stats.improvement === null ? '—' : `${stats.improvement > 0 ? '+' : ''}${stats.improvement} pts`}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
                 <TrendingUp className="w-6 h-6 text-amber-600" />
@@ -200,7 +207,7 @@ export default function Dashboard() {
 
 function InterviewCard({ interview, getStatusBadge }) {
   return (
-    <Link to={`/interview/${interview._id}`}>
+    <Link to={interview.status === 'completed' ? `/feedback/${interview._id}` : `/interview/${interview._id}`}>
       <Card className="hover:shadow-md hover:border-primary/20 transition-all duration-200 group cursor-pointer">
         <CardContent className="flex items-center justify-between py-4">
           <div className="flex items-center gap-4">
@@ -215,7 +222,7 @@ function InterviewCard({ interview, getStatusBadge }) {
                 <span className="text-sm text-muted-foreground">{formatDate(interview.createdAt)}</span>
                 {getStatusBadge(interview.status)}
                 {interview.mode === 'live' && <Badge variant="secondary">Live voice</Badge>}
-                {interview.score && (
+                {interview.status === 'completed' && (
                   <span className="text-sm font-medium text-emerald-600">{interview.score}% Score</span>
                 )}
               </div>
@@ -243,12 +250,10 @@ function EmptyState() {
         <p className="text-muted-foreground mb-6 text-center max-w-sm">
           Start your first mock interview to practice and improve your skills
         </p>
-        <Link to="/create-interview">
-          <Button variant="gradient">
+        <Button variant="gradient" asChild><Link to="/create-interview">
             <PlusCircle className="w-4 h-4 mr-2" />
             Create Your First Interview
-          </Button>
-        </Link>
+          </Link></Button>
       </CardContent>
     </Card>
   );

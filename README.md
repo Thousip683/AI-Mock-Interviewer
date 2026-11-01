@@ -54,7 +54,7 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_YOUR_CLERK_KEY
 ```env
 PORT=5000
 NODE_ENV=development
-MONGODB_URI=mongodb+srv://<user>:<pass>@cluster.mongodb.net/ai-mock-interview
+MONGODB_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/ai-mock-interview
 GEMINI_API_KEY=your_gemini_api_key
 CLERK_SECRET_KEY=sk_test_YOUR_CLERK_SECRET
 ```
@@ -250,3 +250,18 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+
+## Saved learning reports
+
+Newly completed interviews include per-question scores out of 100, detailed feedback,
+reference answers, missing concepts, revision summaries, study points and practice tasks.
+A prioritized study roadmap includes learning steps and measurable success checks.
+Open completed interviews from Dashboard or Feedback to read these reports again.
+Use **Re-analyze saved answers** to upgrade an older report; this makes another Gemini
+request using the stored transcript and keeps the original completion date. If Gemini
+is unavailable the report explicitly identifies heuristic estimates; reference answers
+and personalized roadmaps are not fabricated by the offline fallback.
+
+The live interviewer uses a local illustrated avatar whose mouth animates during audio
+playback, with reduced-motion support. It is not a photorealistic or phoneme-synchronized
+video avatar and requires no additional avatar provider or credentials.

@@ -105,3 +105,15 @@ describe('live interview microphone lifecycle', () => {
     expect(post).not.toHaveBeenCalled();
   });
 });
+
+it('cancels microphone setup and releases a permission grant that arrives later', async () => {
+  let grant;
+  navigator.mediaDevices.getUserMedia.mockImplementation(() => new Promise(resolve => { grant = resolve; }));
+  let starting;
+  await act(async () => { starting = hook.start('Kore'); });
+  act(() => hook.cancel());
+  expect(hook.status).toBe('idle');
+  await act(async () => { grant({ getTracks: () => [track], getAudioTracks: () => [track] }); await starting; });
+  expect(track.stop).toHaveBeenCalled();
+  expect(post).not.toHaveBeenCalled();
+});

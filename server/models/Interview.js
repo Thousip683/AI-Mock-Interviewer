@@ -15,6 +15,12 @@ const answerSchema = new mongoose.Schema({
   score: Number,
   feedback: String,
   tips: String,
+  verdict: String,
+  correctAnswer: String,
+  missingConcepts: [String],
+  studyPoints: [String],
+  summary: String,
+  practiceTask: String,
 });
 
 const interviewSchema = new mongoose.Schema({
@@ -56,6 +62,7 @@ const interviewSchema = new mongoose.Schema({
     relevanceScore: Number,
     depthScore: Number,
     overallFeedback: String,
+    roadmap: [{ topic: String, summary: String, keyPoints: [String], priority: String, reason: String, timeframe: String, steps: [String], practiceTask: String, successCriteria: String }],
   },
   completedAt: Date,
 }, {

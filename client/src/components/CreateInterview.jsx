@@ -39,6 +39,7 @@ export default function CreateInterview() {
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
     role: "",
@@ -58,16 +59,19 @@ export default function CreateInterview() {
   };
 
   const handleSubmit = async () => {
-    setLoading(true);
+    if (loading) return;
+    if (!isStep1Valid) { setError('Choose a role, interview type, and experience level.'); setStep(1); return; }
+    setError(''); setLoading(true);
 
     try {
       const res = await api.post("/interviews", formData);
 
+      if (!res.data?._id) throw new Error('The interview was not created. Please retry.');
       navigate(`/interview/${res.data._id}`);
     } catch (err) {
       console.error("Failed to create interview:", err);
       console.log(err.response?.data);
-      alert(err.response?.data?.error || "Failed to create interview");
+      setError(err.response?.data?.error || err.message || 'Failed to create interview');
     } finally {
       setLoading(false);
     }
@@ -79,16 +83,17 @@ export default function CreateInterview() {
     formData.experience;
 
   return (
-    <div className="container max-w-3xl py-8">
+    <div className="container setup-studio max-w-4xl py-8 sm:py-14">
       <div className="mb-8">
         <h1 className="text-3xl font-bold">
-          Create New Interview
+          Design your next opportunity
         </h1>
         <p className="text-muted-foreground mt-2">
-          Configure your AI-powered interview
+          A considered space to prepare, practise, and grow. Tailor your session in three simple steps.
         </p>
       </div>
 
+      {error && <p role="alert" className="mb-6 rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}</p>}
       {/* Progress */}
       <div className="flex items-center gap-2 mb-8">
         {[1, 2, 3].map((s) => (
@@ -111,19 +116,19 @@ export default function CreateInterview() {
       </div>
 
       {step === 1 && (
-        <Card>
+        <Card className="surface-card editorial-enter overflow-hidden rounded-3xl border-primary/15">
           <CardHeader>
             <CardTitle className="flex gap-2 items-center">
               <Settings className="w-5 h-5" />
-              Basic Configuration
+              Build your interview
             </CardTitle>
 
             <CardDescription>
-              Tell us about your interview.
+              Choose the conversation you want to practise. Your study notes will follow these selections.
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-7">
 
             <fieldset className="space-y-3">
               <legend className="text-sm font-medium">Interview experience</legend>
@@ -131,15 +136,15 @@ export default function CreateInterview() {
                 {[
                   ['standard', 'Question by question', 'Type or record an answer, then move to the next question.'],
                   ['live', 'Live voice interview', 'Talk naturally with an AI interviewer. No Next button needed.'],
-                ].map(([value, title, description]) => <label key={value} className={`cursor-pointer rounded-xl border p-4 ${formData.mode === value ? 'border-primary bg-primary/5' : ''}`}>
+                ].map(([value, title, description]) => <label key={value} className={`selection-tile cursor-pointer rounded-2xl border p-5 ${formData.mode === value ? 'border-primary bg-primary/5' : ''}`}>
                   <span className="flex items-center gap-2 font-medium"><input type="radio" name="mode" value={value} checked={formData.mode === value} onChange={() => handleChange('mode', value)} />{title}</span>
                   <span className="mt-2 block text-sm text-muted-foreground">{description}</span>
                 </label>)}
               </div>
             </fieldset>
 
-            <div>
-              <Label>Role</Label>
+            <div className="setup-field rounded-2xl border border-primary/10 bg-primary/[0.025] p-5">
+              <Label htmlFor="interview-role">Role</Label>
 
               <Select
                 value={formData.role}
@@ -147,7 +152,7 @@ export default function CreateInterview() {
                   handleChange("role", v)
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-2 h-14 rounded-2xl bg-background px-5" id="interview-role">
                   <SelectValue placeholder="Select Role" />
                 </SelectTrigger>
 
@@ -164,8 +169,8 @@ export default function CreateInterview() {
               </Select>
             </div>
 
-            <div>
-              <Label>Interview Type</Label>
+            <div className="setup-field rounded-2xl border border-primary/10 bg-primary/[0.025] p-5">
+              <Label htmlFor="interview-type">Interview Type</Label>
 
               <Select
                 value={formData.type}
@@ -173,7 +178,7 @@ export default function CreateInterview() {
                   handleChange("type", v)
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-2 h-14 rounded-2xl bg-background px-5" id="interview-type">
                   <SelectValue placeholder="Select Type" />
                 </SelectTrigger>
 
@@ -190,8 +195,8 @@ export default function CreateInterview() {
               </Select>
             </div>
 
-            <div>
-              <Label>Experience</Label>
+            <div className="setup-field rounded-2xl border border-primary/10 bg-primary/[0.025] p-5">
+              <Label htmlFor="interview-experience">Experience</Label>
 
               <Select
                 value={formData.experience}
@@ -199,7 +204,7 @@ export default function CreateInterview() {
                   handleChange("experience", v)
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="mt-2 h-14 rounded-2xl bg-background px-5" id="interview-experience">
                   <SelectValue placeholder="Select Experience" />
                 </SelectTrigger>
 
@@ -229,7 +234,7 @@ export default function CreateInterview() {
       )}
 
       {step === 2 && (
-        <Card>
+        <Card className="surface-card editorial-enter overflow-hidden rounded-3xl border-primary/15">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
@@ -239,7 +244,8 @@ export default function CreateInterview() {
 
           <CardContent className="space-y-5">
 
-            <Textarea
+            <Label htmlFor="job-description">Job description (optional)</Label>
+            <Textarea id="job-description" maxLength={12000}
               placeholder="Job Description"
               value={formData.jobDescription}
               onChange={(e) =>
@@ -252,7 +258,8 @@ export default function CreateInterview() {
 
             <Separator />
 
-            <Textarea
+            <Label htmlFor="focus-areas">Focus areas (optional)</Label>
+            <Textarea id="focus-areas" maxLength={2000}
               placeholder="Focus Areas"
               value={formData.focusArea}
               onChange={(e) =>
@@ -285,7 +292,7 @@ export default function CreateInterview() {
       )}
 
       {step === 3 && (
-        <Card>
+        <Card className="surface-card editorial-enter overflow-hidden rounded-3xl border-primary/15">
 
           <CardHeader>
             <CardTitle className="flex gap-2 items-center">
@@ -308,7 +315,7 @@ export default function CreateInterview() {
 
               <Button
                 variant="outline"
-                onClick={() => setStep(2)}
+                onClick={() => setStep(2)} disabled={loading}
               >
                 Back
               </Button>
@@ -325,7 +332,7 @@ export default function CreateInterview() {
                 ) : (
                   <>
                     <Play className="mr-2 w-4 h-4" />
-                    Start Interview
+                    Prepare for interview
                   </>
                 )}
               </Button>

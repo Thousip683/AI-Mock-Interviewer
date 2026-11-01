@@ -47,6 +47,7 @@ export default function useLiveInterview(id) {
       resource.rejectStop?.(new Error(message));
       dispose(resource);
     };
+    resource.timeout = setTimeout(() => fail('Microphone or voice setup timed out. Check microphone permission and your connection, then try again.'), 30000);
     try {
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access needs HTTPS or localhost and a supported browser.');
       const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -81,7 +82,7 @@ export default function useLiveInterview(id) {
       if (!active()) return;
       const ws = new WebSocket(liveSocketUrl(api.defaults.baseURL));
       resource.ws = ws;
-      resource.timeout = setTimeout(() => fail('Voice connection timed out. Please reconnect.'), 25000);
+
       ws.onopen = () => { if (active()) ws.send(JSON.stringify({ type: 'start', ticket: data.ticket, voice })); };
       ws.onmessage = event => {
         if (!active()) return;
@@ -171,5 +172,9 @@ export default function useLiveInterview(id) {
     }
     setMuted(resource.muted);
   };
-  return { status, transcript, error, muted, level, start, finish, toggleMute };
+  const cancel = () => {
+    dispose(current.current);
+    setStatus('idle'); setError(''); setLevel(0);
+  };
+  return { status, transcript, error, muted, level, start, finish, toggleMute, cancel };
 }
