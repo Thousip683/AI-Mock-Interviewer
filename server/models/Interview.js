@@ -19,6 +19,14 @@ const answerSchema = new mongoose.Schema({
 
 const interviewSchema = new mongoose.Schema({
   clerkUserId: { type: String, required: true, index: true },
+  mode: { type: String, enum: ['standard', 'live'], default: 'standard' },
+  liveTranscript: [{
+    speaker: { type: String, enum: ['ai', 'user'], required: true },
+    text: { type: String, required: true },
+    timestamp: String,
+    interrupted: Boolean,
+  }],
+  liveDurationSeconds: { type: Number, default: 0 },
   role: { type: String, required: true },
   type: { type: String, required: true, enum: ['general', 'technical', 'behavioral', 'system-design'] },
   experience: { type: String, required: true, enum: ['entry', 'mid', 'senior', 'lead'] },
@@ -37,6 +45,7 @@ const interviewSchema = new mongoose.Schema({
     },
   ],
   score: { type: Number, default: 0 },
+  evaluationSource: { type: String, enum: ['gemini', 'heuristic'] },
   duration: { type: Number, default: 0 },
   feedback: {
     strengths: [String],

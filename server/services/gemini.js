@@ -302,11 +302,11 @@ Return ONLY valid JSON in this exact format:
     }
 
     console.log(`[GEMINI] ✅ Feedback generated. Score: ${feedback.score}/100, Strengths: ${feedback.strengths?.length || 0}, Improvements: ${feedback.improvements?.length || 0}`);
-    return feedback;
+    return { ...feedback, evaluationSource: 'gemini' };
   } catch (err) {
     console.error(`[GEMINI] ❌ generateFeedback failed: ${err.message}`);
     console.warn('[GEMINI] 🔄 Using fallback feedback');
-    return getFallbackFeedback(questions, answers);
+    return { ...getFallbackFeedback(questions, answers), evaluationSource: 'heuristic' };
   }
 }
 

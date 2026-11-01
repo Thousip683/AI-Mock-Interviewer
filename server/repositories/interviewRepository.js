@@ -7,16 +7,16 @@ import Interview from '../models/Interview.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const storePath = path.join(__dirname, '..', 'data', 'interviews.json');
+let localWrites = Promise.resolve();
+let storeReady;
 
 async function ensureStore() {
-  await fs.mkdir(path.dirname(storePath), { recursive: true });
-
-  try {
-    await fs.access(storePath);
-  } catch {
-    console.log('[REPOSITORY] 📁 Initializing local JSON fallback storage at:', storePath);
-    await fs.writeFile(storePath, '[]', 'utf8');
-  }
+  if (!storeReady) storeReady = (async () => {
+    await fs.mkdir(path.dirname(storePath), { recursive: true });
+    try { await fs.writeFile(storePath, '[]', { encoding: 'utf8', flag: 'wx' }); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+  })().catch(error => { storeReady = null; throw error; });
+  await storeReady;
 }
 
 async function readStore() {
@@ -27,7 +27,19 @@ async function readStore() {
 
 async function writeStore(interviews) {
   await ensureStore();
-  await fs.writeFile(storePath, JSON.stringify(interviews, null, 2), 'utf8');
+  const temporary = `${storePath}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporary, JSON.stringify(interviews, null, 2), 'utf8');
+    await fs.rename(temporary, storePath);
+  } finally { await fs.rm(temporary, { force: true }); }
+}
+
+function serializeMutation(operation) {
+  // Serialize the entire read/modify/write, not just the final file write.
+  // This also prevents two voice sessions from overwriting each other's data.
+  const result = localWrites.then(operation);
+  localWrites = result.catch(() => {});
+  return result;
 }
 
 function isMongoReady() {
@@ -59,7 +71,7 @@ export async function listInterviewsByUser(userId) {
 
   if (isMongoReady()) {
     const interviews = await Interview.find({ clerkUserId: userId })
-      .select('role type status score duration createdAt')
+      .select('role type mode status score duration createdAt')
       .sort({ createdAt: -1 });
 
     console.log(`[REPOSITORY] ✅ listInterviewsByUser: Found ${interviews.length} interviews in MongoDB for user: "${userId}"`);
@@ -73,6 +85,7 @@ export async function listInterviewsByUser(userId) {
     .map((interview) => ({
       _id: interview._id,
       role: interview.role,
+      mode: interview.mode || 'standard',
       type: interview.type,
       status: interview.status,
       score: interview.score,
@@ -122,12 +135,16 @@ export async function getStatsByUser(userId) {
   return result;
 }
 
-export async function createInterviewRecord(userId, payload) {
+export function createInterviewRecord(userId, payload) {
+  return serializeMutation(() => createInterviewRecordImpl(userId, payload));
+}
+async function createInterviewRecordImpl(userId, payload) {
   const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
   console.log(`[REPOSITORY] ➕ createInterviewRecord: Creating new interview for userId: "${userId}", role: "${payload.role}" via ${storage}`);
 
   const interviewData = {
     clerkUserId: userId,
+    mode: payload.mode || 'standard',
     role: payload.role,
     type: payload.type,
     experience: payload.experience,
@@ -208,7 +225,10 @@ export async function getInterviewRecord(userId, interviewId) {
   return normalizeInterview(interview);
 }
 
-export async function saveInterviewRecord(userId, interview) {
+export function saveInterviewRecord(userId, interview) {
+  return serializeMutation(() => saveInterviewRecordImpl(userId, interview));
+}
+async function saveInterviewRecordImpl(userId, interview) {
   const interviewId = interview._id || interview.id;
   const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
   console.log(`[REPOSITORY] 💾 saveInterviewRecord: Updating interview "${interviewId}" (status: "${interview.status}") via ${storage}`);
@@ -265,7 +285,10 @@ export async function saveInterviewRecord(userId, interview) {
   return nextInterview;
 }
 
-export async function deleteInterviewRecord(userId, interviewId) {
+export function deleteInterviewRecord(userId, interviewId) {
+  return serializeMutation(() => deleteInterviewRecordImpl(userId, interviewId));
+}
+async function deleteInterviewRecordImpl(userId, interviewId) {
   const storage = isMongoReady() ? 'MongoDB' : 'Local JSON Store';
   console.log(`[REPOSITORY] 🗑️ deleteInterviewRecord: Deleting interview "${interviewId}" for userId: "${userId}" via ${storage}`);
 

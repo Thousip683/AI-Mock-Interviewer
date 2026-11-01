@@ -47,6 +47,7 @@ export default function CreateInterview() {
     jobDescription: "",
     focusArea: "",
     questionCount: "5",
+    mode: "standard",
   });
 
   const handleChange = (field, value) => {
@@ -123,6 +124,19 @@ export default function CreateInterview() {
           </CardHeader>
 
           <CardContent className="space-y-6">
+
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-medium">Interview experience</legend>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ['standard', 'Question by question', 'Type or record an answer, then move to the next question.'],
+                  ['live', 'Live voice interview', 'Talk naturally with an AI interviewer. No Next button needed.'],
+                ].map(([value, title, description]) => <label key={value} className={`cursor-pointer rounded-xl border p-4 ${formData.mode === value ? 'border-primary bg-primary/5' : ''}`}>
+                  <span className="flex items-center gap-2 font-medium"><input type="radio" name="mode" value={value} checked={formData.mode === value} onChange={() => handleChange('mode', value)} />{title}</span>
+                  <span className="mt-2 block text-sm text-muted-foreground">{description}</span>
+                </label>)}
+              </div>
+            </fieldset>
 
             <div>
               <Label>Role</Label>
@@ -286,6 +300,8 @@ export default function CreateInterview() {
               <p><strong>Role:</strong> {formData.role}</p>
               <p><strong>Type:</strong> {formData.type}</p>
               <p><strong>Experience:</strong> {formData.experience}</p>
+              <p><strong>Experience mode:</strong> {formData.mode === 'live' ? 'Live voice interview' : 'Question by question'}</p>
+              {formData.mode === 'live' && <p className="text-sm text-muted-foreground">Allow microphone access when you start. You can mute or end the conversation at any time.</p>}
             </div>
 
             <div className="flex justify-between">

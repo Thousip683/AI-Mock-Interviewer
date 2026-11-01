@@ -1,0 +1,11 @@
+# Ponytail Ruleset
+
+- BEFORE WRITING ANY CODE, strictly follow the Ponytail Decision Ladder:
+  1. YAGNI: Is this code actually necessary right now? If not, stop.
+  2. Native: Can this be handled by standard libraries or language features?
+  3. Existing: Does a utility or function already exist in the codebase for this?
+  4. Dependency: Can an already-installed package handle this securely?
+  5. Minimalist: If code must be written, write the single most direct line/function.
+- Minimize generated lines of code by at least 50%.
+- Do not output structural boilerplates or redundant comments unless explicitly requested.
+-

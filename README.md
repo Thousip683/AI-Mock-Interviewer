@@ -14,6 +14,7 @@ A professional AI-powered mock interview platform built with React, Node.js, Mon
 - **📊 Detailed Analytics** - Performance tracking with charts and metrics
 - **💡 Instant Feedback** - AI analyzes your answers and provides actionable suggestions
 - **🔐 Secure Auth** - Authentication powered by Clerk
+- **Live voice interviews** - Optional hands-free conversations with spoken questions, interruptions, captions, and transcript-based feedback
 - **📱 Responsive Design** - Works seamlessly on desktop and mobile
 - **🎨 Modern UI** - Beautiful interface built with Tailwind CSS and shadcn/ui
 
@@ -21,7 +22,7 @@ A professional AI-powered mock interview platform built with React, Node.js, Mon
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+ (22.x) or 24+; verified with Node 24
 - MongoDB Atlas account (or local MongoDB)
 - Clerk account (for authentication)
 - Google Gemini API key
@@ -163,6 +164,73 @@ ai-mock-interview/
 | GET | `/api/health` | Health check |
 
 ## 🌐 Deployment
+
+### Live voice interview setup
+
+Choose **Live voice interview** when creating an interview. Existing interviews and the
+question-by-question experience remain available. Select an interviewer voice, click
+**Start live interview**, and allow microphone access. The interviewer greets you and
+asks one question at a time. Speak naturally, mute when needed, and select
+**End interview & get feedback** after the final answer (or to finish early).
+The question count is a conversational target, not a strict turn counter; clarification
+and follow-up exchanges may add turns. Sessions are limited to 30 minutes per connection.
+
+Use a current browser with AudioWorklet support on **HTTPS or localhost**. Headphones
+reduce echo. Microphone audio streams as 16kHz PCM through the Express server to Gemini;
+returned PCM audio is queued for playback and cleared on interruptions. Raw recordings
+are not stored. Server-produced transcripts are saved periodically and after each turn.
+Feedback uses these transcripts, not vocal tone. Reconnect after a connection failure
+to continue with saved context; audio or transcription still in flight may be lost.
+
+Install dependencies from the root with `npm run install:all`. In `server/.env`, set:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_LIVE_MODEL=gemini-3.8-live
+CLERK_PUBLISHABLE_KEY=pk_test_YOUR_CLERK_PUBLISHABLE_KEY
+CLERK_SECRET_KEY=sk_test_YOUR_CLERK_SECRET_KEY
+```
+
+Set `VITE_CLERK_PUBLISHABLE_KEY` in `client/.env` and set `VITE_API_URL` to your
+backend API URL (local default: `http://localhost:5000/api`). Restart after changing
+environment variables. The configured Gemini project must have Live API access and
+available quota. The Live API uses `@google/genai`; the existing text question and
+feedback service still uses `@google/generative-ai`. Model configuration follows the
+[official Gemini Live SDK guide](https://ai.google.dev/gemini-api/docs/live-api/get-started-sdk).
+
+New endpoints:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/interviews/:id/live-session` | Clerk-protected, ownership-checked, one-use ticket (60s expiry) |
+| WebSocket | `/api/live` | First message authenticates with the ticket; relays audio and captions |
+| POST | `/api/interviews/:id/live-finish` | Evaluates the stored transcript after the socket has saved and closed |
+
+Gemini keys never enter browser code. Connection tickets are sent in the first WebSocket
+message, not query strings or application logs. A session rechecks ownership before
+connecting to Gemini. Completion cannot race an active session, and repeated finish
+requests reuse completed feedback. Non-live submit/generate routes reject live records.
+
+Deploy the backend on a service supporting **long-lived WebSockets**; proxy `/api/live`
+with WebSocket upgrade headers and a timeout suitable for a 30-minute connection. An
+HTTPS frontend must use an HTTPS API URL (which maps to WSS). This implementation uses
+in-memory one-use tickets and session locks: run **one backend process/replica**. For
+horizontal scaling, move ticket consumption, session ownership and transcript writes
+to a shared transactional store first. MongoDB is recommended for persistence; local
+JSON storage now serializes mutations and atomically replaces the file within one
+process, but still does not migrate or reconcile records when switching storage modes.
+
+Validation: `npm --prefix server test`, `npm --prefix client test`, and `npm run build:client`. Tests mock Gemini;
+they do not prove provider availability, microphone hardware behavior, or Clerk setup.
+For a live smoke test, sign in, create a live interview, allow the microphone, verify
+spoken questions/captions, interrupt the interviewer, mute/unmute, end after an answer,
+and verify feedback in history. Also reconnect after a disconnect and verify context.
+If text-model evaluation fails, the existing word-count heuristic is used and the
+feedback screen explicitly labels it as a practice estimate rather than an AI assessment.
+
+The voice transport/audio design was adapted from the user-supplied
+`gemini-live-voice-chat.zip`; its standalone unauthenticated demo server was not copied
+into the application's authentication flow.
 
 ### Frontend (Vercel/Netlify)
 1. Build: `cd client && npm run build`

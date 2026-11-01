@@ -23,6 +23,7 @@ const server = await createServer({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
+        ws: true,
       },
     },
   },

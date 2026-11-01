@@ -214,6 +214,7 @@ function InterviewCard({ interview, getStatusBadge }) {
               <div className="flex items-center gap-3 mt-1">
                 <span className="text-sm text-muted-foreground">{formatDate(interview.createdAt)}</span>
                 {getStatusBadge(interview.status)}
+                {interview.mode === 'live' && <Badge variant="secondary">Live voice</Badge>}
                 {interview.score && (
                   <span className="text-sm font-medium text-emerald-600">{interview.score}% Score</span>
                 )}
@@ -222,7 +223,7 @@ function InterviewCard({ interview, getStatusBadge }) {
           </div>
           <div className="hidden sm:flex items-center gap-2 text-muted-foreground">
             <Clock className="w-4 h-4" />
-            <span className="text-sm">{interview.duration || 0} questions</span>
+            <span className="text-sm">{interview.duration || 0} min</span>
             <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
           </div>
         </CardContent>

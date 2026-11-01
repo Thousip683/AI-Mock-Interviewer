@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import api from '@/lib/api';
+import LiveInterview from '@/components/LiveInterview';
 import { 
   Mic, MicOff, Send, Play, 
   Loader2, Clock, ArrowLeft, CheckCircle2,
@@ -47,6 +48,10 @@ export default function InterviewScreen() {
 
       if (res.data.status === 'completed') {
         navigate(`/feedback/${id}`);
+        return;
+      }
+      if (res.data.mode === 'live') {
+        setStage('live');
         return;
       }
 
@@ -215,6 +220,8 @@ export default function InterviewScreen() {
       setIsRecording(false);
     }
   };
+
+  if (stage === 'live') return <LiveInterview key={id} interview={interview} />;
 
   // ── Loading/Generating screen ───────────────────────────────────────────────
   if (stage === 'loading' || stage === 'generating') {

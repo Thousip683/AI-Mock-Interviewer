@@ -334,6 +334,7 @@ describe('generateFeedback', () => {
       experience: 'senior',
     });
 
+    expect(result.evaluationSource).toBe('gemini');
     expect(typeof result.score).toBe('number');
     expect(result.score).toBeGreaterThan(0);
     expect(Array.isArray(result.strengths)).toBe(true);
@@ -367,6 +368,7 @@ describe('generateFeedback', () => {
     mockGeminiError();
 
     const result = await generateFeedback(sampleQuestions, sampleAnswers);
+    expect(result.evaluationSource).toBe('heuristic');
     expect(typeof result.score).toBe('number');
     expect(Array.isArray(result.questionFeedback)).toBe(true);
     expect(result.questionFeedback).toHaveLength(2);

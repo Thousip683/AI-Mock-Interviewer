@@ -131,11 +131,11 @@ export default function Feedback() {
   }
 
   const performanceData = [
-    { category: 'Technical', score: feedback.technicalScore || 70 },
-    { category: 'Communication', score: feedback.communicationScore || 75 },
-    { category: 'Confidence', score: feedback.confidenceScore || 65 },
-    { category: 'Relevance', score: feedback.relevanceScore || 80 },
-    { category: 'Depth', score: feedback.depthScore || 72 },
+    { category: 'Technical', score: feedback.technicalScore ?? 0 },
+    { category: 'Communication', score: feedback.communicationScore ?? 0 },
+    { category: 'Confidence', score: feedback.confidenceScore ?? 0 },
+    { category: 'Relevance', score: feedback.relevanceScore ?? 0 },
+    { category: 'Depth', score: feedback.depthScore ?? 0 },
   ];
 
   const radarData = performanceData.map((d) => ({
@@ -146,6 +146,8 @@ export default function Feedback() {
 
   return (
     <div className="container py-8 space-y-8">
+      {feedback.evaluationSource === 'heuristic' && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">AI evaluation was unavailable. These are word-count-based practice estimates, not an assessment of answer correctness.</div>}
+      {feedback.mode === 'live' && <p className="text-sm text-muted-foreground">Live interview feedback is based on the saved transcript, not your vocal tone. Transcription errors can affect the evaluation.</p>}
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>

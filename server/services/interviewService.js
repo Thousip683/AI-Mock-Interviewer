@@ -1,4 +1,5 @@
 import { generateQuestions, generateFollowUp, generateFeedback } from './gemini.js';
+import { isLiveBusy } from './liveSessions.js';
 import {
   listInterviewsByUser,
   getStatsByUser,
@@ -49,6 +50,17 @@ export async function createInterview(userId, payload) {
 
   const { role, type, experience } = payload || {};
 
+  if (payload?.mode !== undefined && !['standard', 'live'].includes(payload.mode)) {
+    throw createHttpError(400, 'Invalid interview mode');
+  }
+  if (payload?.mode === 'live') {
+    const count = Number(payload.questionCount || 5);
+    if (!Number.isInteger(count) || count < 1 || count > 20) throw createHttpError(400, 'Live interviews need between 1 and 20 target questions');
+    for (const field of ['role', 'type', 'experience', 'jobDescription', 'focusArea']) {
+      if (payload[field] !== undefined && typeof payload[field] !== 'string') throw createHttpError(400, `${field} must be text`);
+    }
+  }
+
   if (!role || !type || !experience) {
     console.warn(`[SERVICE:interview] ❌ createInterview validation failed: Missing required fields (role: ${role}, type: ${type}, experience: ${experience})`);
     throw createHttpError(400, 'Role, type, and experience are required');
@@ -88,6 +100,7 @@ export async function getInterviewQuestions(userId, id) {
 export async function generateInterviewQuestions(userId, id) {
   console.log(`[SERVICE:interview] ⚡ generateInterviewQuestions: Requested for interview "${id}" (userId: "${userId}")`);
   const interview = await getInterviewById(userId, id);
+  if (interview.mode === 'live') throw createHttpError(400, 'Start a live voice session for this interview');
 
   const currentQuestions = interview.questions || [];
 
@@ -132,6 +145,7 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
   }
 
   const interview = await getInterviewById(userId, id);
+  if (interview.mode === 'live') throw createHttpError(400, 'Use the live voice session for this interview');
   const maxQuestions = interview.questionCount || 5;
 
   // Build updated conversation history (cap at 10 to stay within token budget)
@@ -179,16 +193,19 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
     conversationHistory: updatedHistory,
   });
 
-  console.log(`[SERVICE:interview] ✅ Follow-up question saved to interview "${id}" (isComplete=${followUp.isComplete})`);
+  console.log(`[SERVICE:interview] ✅ Follow-up question saved to interview "${id}"; awaiting candidate answer`);
   return {
     question: newQuestion,
-    isComplete: followUp.isComplete || false,
+    // A generated question still needs an answer, including the final one.
+    // Only the question-limit branch above may tell the client to submit.
+    isComplete: false,
   };
 }
 
-export async function submitInterviewAnswers(userId, id, answers) {
+export async function submitInterviewAnswers(userId, id, answers, { fromLive = false } = {}) {
   console.log(`[SERVICE:interview] 📝 submitInterviewAnswers: Submitting answers for interview "${id}" (userId: "${userId}")`);
   const interview = await getInterviewById(userId, id);
+  if (interview.mode === 'live' && !fromLive) throw createHttpError(400, 'End the live interview to generate feedback');
 
   if (!Array.isArray(answers)) {
     console.warn(`[SERVICE:interview] ❌ submitInterviewAnswers failed: "answers" is not an array (type: ${typeof answers})`);
@@ -236,7 +253,8 @@ export async function submitInterviewAnswers(userId, id, answers) {
   }
 
   interview.score = feedback.score || 0;
-  interview.duration = interview.questionCount * 2;
+  interview.evaluationSource = feedback.evaluationSource;
+  interview.duration = fromLive ? Math.round((interview.liveDurationSeconds || 0) / 60) : interview.questionCount * 2;
   interview.status = 'completed';
   interview.completedAt = new Date();
 
@@ -259,6 +277,8 @@ export async function getInterviewFeedback(userId, id) {
   console.log(`[SERVICE:interview] ✅ getInterviewFeedback: Returning feedback for interview "${id}" (score: ${interview.score}/100)`);
   return {
     score: interview.score,
+    mode: interview.mode || 'standard',
+    evaluationSource: interview.evaluationSource,
     role: interview.role,
     type: interview.type,
     date: interview.completedAt || interview.updatedAt,
@@ -283,6 +303,7 @@ export async function getInterviewFeedback(userId, id) {
 }
 
 export async function deleteInterview(userId, id) {
+  if (isLiveBusy(id)) throw createHttpError(409, 'End the live session before deleting this interview');
   console.log(`[SERVICE:interview] 🗑️ deleteInterview: Requesting deletion of interview "${id}" for user "${userId}"`);
   if (!userId) {
     console.warn('[SERVICE:interview] ❌ deleteInterview failed: Missing userId');
