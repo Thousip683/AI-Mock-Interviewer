@@ -25,6 +25,17 @@ export const JOB_ROLES = [
   'Cloud Architect',
   'Mobile Developer',
   'QA Engineer',
+  'Software Engineer', 'Data Analyst', 'Data Engineer', 'Business Analyst',
+  'Cybersecurity Analyst', 'Site Reliability Engineer', 'Platform Engineer',
+  'Embedded Systems Engineer', 'Automation Engineer', 'Network Engineer',
+  'AI Engineer', 'Game Developer', 'iOS Developer', 'Android Developer',
+  'UI Designer', 'UX Researcher', 'Graphic Designer', 'Product Designer',
+  'Project Manager', 'Program Manager', 'Scrum Master', 'Technical Writer',
+  'Digital Marketing Specialist', 'Content Strategist', 'SEO Specialist',
+  'Sales Representative', 'Account Manager', 'Customer Success Manager',
+  'HR Specialist', 'Recruiter', 'Financial Analyst', 'Accountant',
+  'Operations Analyst', 'Supply Chain Analyst', 'Consultant',
+  'Teacher', 'Research Assistant', 'Student / Graduate',
 ];
 
 export const DIFFICULTY_LEVELS = [

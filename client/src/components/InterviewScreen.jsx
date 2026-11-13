@@ -96,7 +96,12 @@ export default function InterviewScreen() {
     }, 1000);
   }, []);
 
-  const startInterview = () => {
+  const startInterview = async () => {
+    if (actionRef.current) return;
+    actionRef.current = true; setOperationError('');
+    try { await api.post(`/interviews/${id}/start`); }
+    catch (error) { setOperationError(error.response?.data?.error || 'Could not start the timer. Please retry.'); actionRef.current = false; return; }
+    actionRef.current = false;
     setStage('in_progress');
     startTimer(3); // 3 minutes per question for more thoughtful answers
   };
@@ -345,6 +350,7 @@ export default function InterviewScreen() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {operationError && <p role="alert" className="mb-4 text-red-700">{operationError}</p>}
             <PreparationGuide interview={interview} />
             <div className="grid grid-cols-3 gap-4 max-w-sm mx-auto mb-6">
               <div className="p-3 rounded-xl bg-muted/50">
@@ -420,7 +426,7 @@ export default function InterviewScreen() {
       <Card className="mb-6">
         <CardHeader>
           <div className="flex items-center gap-2 mb-2">
-            <Badge variant="outline">{interview?.type} Question</Badge>
+            <Badge variant="outline">{currentQuestion?.type === "coding" ? `Coding round · ${interview.codingLanguage}` : `${interview?.type} Question`}</Badge>
             {currentIndex > 0 && (
               <Badge variant="secondary" className="gap-1">
                 <Brain className="w-3 h-3" />
@@ -439,13 +445,15 @@ export default function InterviewScreen() {
         </CardHeader>
 
         <CardContent>
+          {currentQuestion?.type==='coding'&&<p className="mb-4 rounded-xl border p-3 text-sm">Write your {interview.codingLanguage} solution, explain its complexity, and include test cases. This is an AI code review: your code is not executed.</p>}
           {/* Answer Area */}
           <div className="relative">
             <Textarea
               aria-label="Your answer" placeholder="Type your answer here... (or use voice input)"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
-              className="min-h-[200px] text-base leading-relaxed resize-none"
+              className={currentQuestion?.type === "coding" ? "code-answer min-h-[320px]" : "min-h-[200px] text-base leading-relaxed resize-none"}
+              spellCheck={currentQuestion?.type !== "coding"} maxLength={30000}
               disabled={isBusy}
             />
             <div className="absolute bottom-3 right-3 flex items-center gap-2">

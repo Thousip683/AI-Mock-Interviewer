@@ -12,7 +12,7 @@ import Feedback from '../src/components/Feedback.jsx';
 import InterviewerAvatar from '../src/components/InterviewerAvatar.jsx';
 
 it('reopens saved reference answers and roadmap, and can refresh the saved report', async () => {
-  const report = { score: 40, questionFeedback: [{ question: 'Explain indexes', answer: 'Unsure', score: 40, correctAnswer: 'Indexes trade write costs for read speed.', missingConcepts: ['Write overhead'], studyPoints: ['Read EXPLAIN plans'], summary: 'Measure first', practiceTask: 'Compare plans' }], roadmap: [{ topic: 'Database indexing', priority: 'high', steps: ['Analyze a query plan'], practiceTask: 'Benchmark a query', successCriteria: 'Explain the measured trade-off' }] };
+  const report = { evaluationSource: 'gemini', score: 40, questionFeedback: [{ question: 'Explain indexes', answer: 'Unsure', score: 40, correctAnswer: 'Indexes trade write costs for read speed.', missingConcepts: ['Write overhead'], studyPoints: ['Read EXPLAIN plans'], summary: 'Measure first', practiceTask: 'Compare plans' }], roadmap: [{ topic: 'Database indexing', priority: 'high', steps: ['Analyze a query plan'], practiceTask: 'Benchmark a query', successCriteria: 'Explain the measured trade-off' }] };
   get.mockImplementation(async url => ({ data: url === '/interviews' ? [{ _id: 'saved', status: 'completed' }] : report }));
   post.mockResolvedValue({ data: report });
   let tree;
@@ -58,3 +58,4 @@ it('filters chart table scores using the keyboard-accessible band buttons', () =
   expect(tree.root.findByType('tbody').findAllByType('tr')).toHaveLength(2);
   tree.unmount();
 });
+

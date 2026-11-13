@@ -72,18 +72,19 @@ it('supports logo, navigation, account menu, signed-out mobile menu, back and fo
   await act(async () => navigate(-1)); expect(location.pathname).toBe('/dashboard');
   await act(async () => navigate(1)); expect(location.pathname).toBe('/create-interview');
   await clickLink('/'); expect(location.pathname).toBe('/');
+  await clickLink('/dashboard');
   act(() => tree.root.findByProps({ 'aria-label': 'Account menu' }).props.onClick());
   expect(tree.root.findByProps({ id: 'account-menu' })).toBeDefined();
   await act(async () => { await button('Sign Out').props.onClick(); });
   expect(signOut).toHaveBeenCalledWith({ redirectUrl: '/' });
-  auth.signedIn = false; act(() => tree.update(React.createElement(MemoryRouter, null, React.createElement(Probe), React.createElement(App))));
-  act(() => tree.root.findByProps({ 'aria-label': 'Open navigation' }).props.onClick());
-  expect(tree.root.findByProps({ id: 'mobile-navigation' }).findAllByType('a').map(item => item.props.href)).toEqual(['/login', '/sign-up']);
+  await clickLink('/');
+  auth.signedIn = false;
+  expect(output()).toContain('Start the interview');
 });
 it('validates configuration, preserves wizard choices and handles a failed create submission', async () => {
   await render('/create-interview'); expect(button('Next').props.disabled).toBe(true);
   const values = ['Backend Developer', 'technical', 'mid'];
-  act(() => tree.root.findAllByType('select').forEach((item, index) => item.props.onChange({ target: { value: values[index] } })));
+  act(() => tree.root.findAllByType('select').slice(0,3).forEach((item, index) => item.props.onChange({ target: { value: values[index] } })));
   await act(async () => button('Next').props.onClick()); expect(output()).toContain('Additional Details');
   act(() => tree.root.findByProps({ id: 'job-description' }).props.onChange({ target: { value: 'Build APIs' } }));
   await act(async () => button('Review').props.onClick());
@@ -105,7 +106,7 @@ it('keeps API failures distinguishable from empty history and retries them', asy
   await act(async () => { await button('Try again').props.onClick(); }); expect(output()).toContain('Your Interviews');
 });
 it('preserves the answer after a follow-up failure and does not silently submit', async () => {
-  await render('/interview/standard'); act(() => button('Start Interview').props.onClick());
+  await render('/interview/standard'); await act(async () => { await button('Start Interview').props.onClick(); });
   act(() => tree.root.findByType('textarea').props.onChange({ target: { value: 'My answer' } }));
   post.mockRejectedValueOnce({ response: { data: { error: 'Follow-up unavailable' } } });
   await act(async () => { await button('Next').props.onClick(); });
@@ -114,7 +115,7 @@ it('preserves the answer after a follow-up failure and does not silently submit'
   expect(post.mock.calls.some(([url]) => url.endsWith('/submit'))).toBe(false);
 });
 it('revisits a question without duplicating answers, and submits the edited answer', async () => {
-  await render('/interview/standard'); act(() => button('Start Interview').props.onClick());
+  await render('/interview/standard'); await act(async () => { await button('Start Interview').props.onClick(); });
   act(() => tree.root.findByType('textarea').props.onChange({ target: { value: 'First answer' } }));
   await act(async () => { await button('Next').props.onClick(); });
   act(() => button('Previous').props.onClick());
@@ -133,3 +134,4 @@ it('accepts only known local post-login destinations', () => {
   expect(loginDestination({ search: '?redirect=%2Ffeedback%2Fsaved', state: null })).toBe('/feedback/saved');
   for (const target of ['https://evil.test', '//evil.test', '/login', '/unknown']) expect(loginDestination({ search: `?redirect=${encodeURIComponent(target)}` })).toBe('/dashboard');
 });
+

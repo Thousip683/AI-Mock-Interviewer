@@ -1,3 +1,4 @@
+import DeviceCheck from './DeviceCheck';
 import PreparationGuide from '@/components/PreparationGuide';
 import AudioWaveform from '@/components/AudioWaveform';
 import { useEffect, useRef, useState } from 'react';
@@ -14,8 +15,10 @@ export default function LiveInterview({ interview }) {
   const live = useLiveInterview(id);
   const [voice, setVoice] = useState('Kore');
   const bottom = useRef(null);
+  const [elapsed, setElapsed] = useState(interview.liveDurationSeconds || 0);
   const active = ['listening', 'speaking'].includes(live.status);
   const busy = ['connecting', 'finishing'].includes(live.status);
+  useEffect(()=>{if(!active)return;const started=Date.now();const initial=elapsed;const timer=setInterval(()=>setElapsed(initial+Math.floor((Date.now()-started)/1000)),1000);return()=>clearInterval(timer);},[active]);
   const transcript = live.transcript.length ? live.transcript : interview.liveTranscript || [];
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [transcript]);
   useEffect(() => {
@@ -38,7 +41,9 @@ export default function LiveInterview({ interview }) {
         </div>
         <span className="rounded-full border bg-background px-4 py-2 text-sm">Hands-free conversation</span>
       </div>
+      {!active && !busy && <DeviceCheck/>}
       {!active && !busy && <PreparationGuide interview={interview} />}
+      <div className="mb-4 flex flex-wrap justify-between gap-3 text-xs"><span>{active?'Connected':busy?'Connecting / saving':'Not connected'} · {Math.floor(elapsed/60)}:{String(elapsed%60).padStart(2,'0')}</span><span>{live.savedAt?`Transcript saved ${new Date(live.savedAt).toLocaleTimeString()}`:'Transcript saves are confirmed during the session'}</span></div>
       <div className="space-y-5">
         <section className="live-stage focused-interview flex flex-col rounded-3xl bg-slate-950 p-4 text-white shadow-xl sm:p-7">
           <div className="flex min-h-64 flex-col items-center justify-center text-center">

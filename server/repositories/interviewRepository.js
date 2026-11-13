@@ -43,6 +43,7 @@ function serializeMutation(operation) {
 }
 
 function isMongoReady() {
+  if (process.env.NODE_ENV === "production" && mongoose.connection.readyState !== 1) throw Object.assign(new Error("Database unavailable. Please retry shortly."), { status: 503 });
   return mongoose.connection.readyState === 1;
 }
 
@@ -71,7 +72,7 @@ export async function listInterviewsByUser(userId) {
 
   if (isMongoReady()) {
     const interviews = await Interview.find({ clerkUserId: userId })
-      .select('role type mode status score duration createdAt')
+      .select('role type mode status score duration createdAt experience evaluationSource completedAt practiceOf feedback.technicalScore feedback.communicationScore feedback.relevanceScore feedback.depthScore feedback.roadmap')
       .sort({ createdAt: -1 });
 
     console.log(`[REPOSITORY] ✅ listInterviewsByUser: Found ${interviews.length} interviews in MongoDB for user: "${userId}"`);
@@ -85,6 +86,8 @@ export async function listInterviewsByUser(userId) {
     .map((interview) => ({
       _id: interview._id,
       role: interview.role,
+      experience: interview.experience, evaluationSource: interview.evaluationSource, completedAt: interview.completedAt, practiceOf: interview.practiceOf,
+      feedback: interview.feedback,
       mode: interview.mode || 'standard',
       type: interview.type,
       status: interview.status,
@@ -149,6 +152,7 @@ async function createInterviewRecordImpl(userId, payload) {
     type: payload.type,
     experience: payload.experience,
     jobDescription: payload.jobDescription,
+    resumeText: payload.resumeText, codingRound: payload.codingRound, codingLanguage: payload.codingLanguage, practiceOf: payload.practiceOf,
     focusArea: payload.focusArea,
     questionCount: payload.questionCount || 5,
     status: 'pending',

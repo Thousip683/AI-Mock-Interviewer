@@ -8,6 +8,7 @@ export default function useLiveInterview(id) {
   const [error, setError] = useState('');
   const [muted, setMuted] = useState(false);
   const [level, setLevel] = useState(0);
+  const [savedAt, setSavedAt] = useState(null);
   const current = useRef(null);
 
   const stopPlayback = useCallback(resource => {
@@ -92,6 +93,7 @@ export default function useLiveInterview(id) {
         if (!active()) return;
         let message;
         try { message = JSON.parse(event.data); } catch { fail('Invalid voice response. Please reconnect.'); return; }
+        if (message.type === 'saved') setSavedAt(message.savedAt);
         if (message.transcript) setTranscript(message.transcript);
         if (message.type === 'ready') {
           clearTimeout(resource.timeout);
@@ -198,5 +200,5 @@ export default function useLiveInterview(id) {
     dispose(current.current);
     setStatus('idle'); setError(''); setLevel(0);
   };
-  return { status, transcript, error, muted, level, start, finish, toggleMute, cancel };
+  return { status, transcript, error, muted, level, savedAt, start, finish, toggleMute, cancel };
 }

@@ -25,7 +25,7 @@ console.log('🚀 Starting AI Mock Interview Server');
 console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
 console.log(`🔌 Port: ${PORT}`);
 console.log(`🔑 Clerk Auth: Publishable Key ${process.env.CLERK_PUBLISHABLE_KEY ? '✅ (Configured)' : '❌ (Missing)'}, Secret Key ${process.env.CLERK_SECRET_KEY ? '✅ (Configured)' : '❌ (Missing)'}`);
-console.log(`🤖 Gemini API: ${process.env.GEMINI_API_KEY ? `✅ (Key set, starts with ${process.env.GEMINI_API_KEY.substring(0, 6)}...)` : '❌ (Missing)'}`);
+console.log(`🤖 Gemini API: ${process.env.GEMINI_API_KEY ? '✅ (Configured)' : '❌ (Missing)'}`);
 if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith('AIzaSy')) {
   console.warn('⚠️  WARNING: GEMINI_API_KEY does not start with standard prefix "AIzaSy". If you receive [400 Bad Request] API key not valid, please verify your Gemini API key in server/.env.');
 }
@@ -37,7 +37,11 @@ console.log('====================================================');
 await connectDB();
 
 // Middleware
-app.use(cors());
+const origins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173').split(',').map(value => value.trim());
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGINS) throw new Error('ALLOWED_ORIGINS is required in production');
+app.disable('x-powered-by');
+app.use(cors({ origin(origin, callback) { callback(null, !origin || origins.includes(origin)); } }));
+app.use((req, res, next) => { res.set('X-Content-Type-Options', 'nosniff'); res.set('Referrer-Policy', 'strict-origin-when-cross-origin'); next(); });
 
 // Global HTTP Request Logger
 app.use((req, res, next) => {
@@ -59,7 +63,7 @@ app.use(clerkMiddleware({
   secretKey: process.env.CLERK_SECRET_KEY,
 }));
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
@@ -85,7 +89,7 @@ app.use((err, req, res, next) => {
   }
 
   res.status(status).json({
-    error: err.message || 'Internal Server Error',
+    error: process.env.NODE_ENV === 'production' && status >= 500 ? 'Service temporarily unavailable. Please retry.' : err.message || 'Internal Server Error',
     ...(process.env.NODE_ENV === 'development'
       ? { stack: err.stack }
       : {}),

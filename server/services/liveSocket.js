@@ -9,6 +9,7 @@ export function buildLivePrompt(interview) {
     role: interview.role, type: interview.type, experience: interview.experience,
     jobDescription: (interview.jobDescription || '').slice(0, 4000),
     focusArea: (interview.focusArea || '').slice(0, 1000),
+    resumeText: (interview.resumeText || "").slice(0, 16000),
     targetQuestions: interview.questionCount || 5,
   });
   const history = (interview.liveTranscript || []).slice(-40)
@@ -76,6 +77,7 @@ export function attachLiveServer(server, { connect } = {}) {
       writes = writes.then(async () => {
         const saved = await saveInterviewRecord(identity.userId, snapshot);
         if (!saved) throw new Error('Interview no longer exists');
+        send({ type: 'saved', savedAt: new Date().toISOString() });
       });
       // Handle rejections immediately; stop will also await/report failed writes.
       void writes.catch(() => { void stop('Could not save the transcript. Please retry after checking storage.'); });
