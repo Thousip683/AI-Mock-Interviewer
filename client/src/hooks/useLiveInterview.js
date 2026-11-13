@@ -6,15 +6,18 @@ export default function useLiveInterview(id) {
   const [status, setStatus] = useState('idle');
   const [transcript, setTranscript] = useState([]);
   const [error, setError] = useState('');
+  const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(false);
   const [level, setLevel] = useState(0);
   const [savedAt, setSavedAt] = useState(null);
+  const [caption, setCaption] = useState('');
   const current = useRef(null);
 
   const stopPlayback = useCallback(resource => {
     for (const source of resource.sources) { try { source.stop(); } catch { /* already ended */ } }
     resource.sources.clear();
     resource.nextTime = 0;
+    resource.captionText = ''; resource.captionStart = null; setCaption('');
   }, []);
 
   const stopAudio = useCallback(resource => {
@@ -30,6 +33,7 @@ export default function useLiveInterview(id) {
     if (!resource) return;
     resource.cancelled = true;
     clearTimeout(resource.timeout);
+    clearInterval(resource.captionTimer);
     stopAudio(resource);
     resource.ws?.close();
   }, [stopAudio]);
@@ -40,7 +44,17 @@ export default function useLiveInterview(id) {
     if (current.current && !current.current.cancelled) return;
     const resource = { sources: new Set(), nextTime: 0, ready: false, muted: false, cancelled: false };
     current.current = resource;
-    setStatus('connecting'); setError(''); setMuted(false);
+    setStatus('connecting'); setError(''); setMuted(false); setPaused(false); setCaption('');
+    resource.captionText = '';
+    resource.captionTimer = setInterval(() => {
+      if (resource.paused || !resource.playbackActive || resource.captionStart == null || !resource.context) return;
+      const seconds = Math.max(0, resource.context.currentTime - resource.captionStart);
+      // The service has no word timestamps. Pace short captions against the actual
+      // playback clock rather than displaying ahead-of-audio transcript packets.
+      const count = Math.min(resource.captionText.length, Math.floor(seconds * 18));
+      const visible = resource.captionText.slice(0, count);
+      setCaption(visible.slice(Math.max(0, visible.lastIndexOf(' ', Math.max(0, visible.length - 120)))));
+    }, 60);
     const active = () => current.current === resource && !resource.cancelled;
     const fail = message => {
       if (!active()) return;
@@ -74,7 +88,7 @@ export default function useLiveInterview(id) {
       resource.silent.gain.value = 0;
       resource.input.connect(resource.capture).connect(resource.silent).connect(resource.context.destination);
       resource.capture.port.onmessage = event => {
-        if (!active() || !resource.ready || resource.ending || resource.muted) return;
+        if (!active() || !resource.ready || resource.ending || resource.muted || resource.paused) return;
         const samples = event.data;
         const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
         if (!resource.playbackActive) setLevel(Math.min(1, rms * 5));
@@ -94,18 +108,25 @@ export default function useLiveInterview(id) {
         let message;
         try { message = JSON.parse(event.data); } catch { fail('Invalid voice response. Please reconnect.'); return; }
         if (message.type === 'saved') setSavedAt(message.savedAt);
-        if (message.transcript) setTranscript(message.transcript);
+        if (message.transcript) {
+          setTranscript(message.transcript);
+          if (message.type === 'transcript') {
+            const last = message.transcript.at(-1);
+            if (last?.speaker === 'ai') resource.captionText = last.text;
+          }
+        }
         if (message.type === 'ready') {
           clearTimeout(resource.timeout);
           resource.ready = true;
           setStatus('listening');
         } else if (message.type === 'audio' && !resource.ending) {
+          resource.turnComplete = false;
           const context = resource.context;
           const samples = decodePcm(message.data);
           if (!samples.length) return;
           resource.playbackActive = true;
           const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
-          setLevel(Math.min(1, rms * 4));
+          if (!resource.paused) setLevel(Math.min(1, rms * 4));
           const sampleRate = Number(message.mimeType?.match(/rate=(\d+)/)?.[1] || 24000);
           const buffer = context.createBuffer(1, samples.length, sampleRate);
           buffer.copyToChannel(samples, 0);
@@ -122,6 +143,8 @@ export default function useLiveInterview(id) {
               resource.playbackActive = false;
               setLevel(0);
               setStatus('listening');
+              setCaption('');
+              if (resource.turnComplete) { resource.captionText = ''; resource.captionStart = null; }
             }
           };
           const when = Math.max(context.currentTime + 0.02, resource.nextTime);
@@ -132,9 +155,13 @@ export default function useLiveInterview(id) {
           outputGain.gain.linearRampToValueAtTime(1, when + edgeFade);
           outputGain.gain.setValueAtTime(1, when + buffer.duration - edgeFade);
           outputGain.gain.linearRampToValueAtTime(0, when + buffer.duration);
+          if (resource.captionStart == null) resource.captionStart = when;
           source.start(when);
           resource.nextTime = when + buffer.duration;
           setStatus('speaking');
+        } else if (message.type === 'turnComplete') {
+          resource.turnComplete = true;
+          if (!resource.sources.size) { resource.captionText = ''; resource.captionStart = null; setCaption(''); }
         } else if (message.type === 'interrupted') {
           stopPlayback(resource);
           resource.playbackActive = false;
@@ -189,16 +216,39 @@ export default function useLiveInterview(id) {
     const resource = current.current;
     if (!resource?.ready || resource.cancelled || resource.ending) return;
     resource.muted = !resource.muted;
-    resource.stream.getAudioTracks().forEach(track => { track.enabled = !resource.muted; });
+    resource.stream.getAudioTracks().forEach(track => { track.enabled = !resource.muted && !resource.paused; });
     if (resource.muted) {
       setLevel(0);
       resource.ws.send(JSON.stringify({ type: 'audioStreamEnd' }));
     }
     setMuted(resource.muted);
   };
+  const togglePause = async () => {
+    const resource = current.current;
+    if (!resource?.ready || resource.cancelled || resource.ending || resource.pauseChanging) return;
+    resource.pauseChanging = true;
+    try {
+      if (!resource.paused) {
+        resource.paused = true;
+        resource.stream.getAudioTracks().forEach(track => { track.enabled = false; });
+        await resource.context.suspend();
+        setPaused(true); setLevel(0);
+      } else {
+        await resource.context.resume();
+        resource.paused = false;
+        resource.stream.getAudioTracks().forEach(track => { track.enabled = !resource.muted; });
+        setPaused(false);
+      }
+    } catch {
+      resource.paused = resource.context.state === 'suspended';
+      setPaused(resource.paused);
+      resource.stream.getAudioTracks().forEach(track => { track.enabled = !resource.paused && !resource.muted; });
+      setError('Could not change pause state. Please retry.');
+    } finally { resource.pauseChanging = false; }
+  };
   const cancel = () => {
     dispose(current.current);
     setStatus('idle'); setError(''); setLevel(0);
   };
-  return { status, transcript, error, muted, level, savedAt, start, finish, toggleMute, cancel };
+  return { status, transcript, caption, error, muted, paused, togglePause, level, savedAt, start, finish, toggleMute, cancel };
 }

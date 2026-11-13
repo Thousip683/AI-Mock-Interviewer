@@ -8,10 +8,10 @@ it('shows generation failure, supports retry, and renders returned study bullets
   let tree;
   act(() => { tree = create(React.createElement(PreparationGuide,{interview:{_id:'owned',role:'QA Engineer',experience:'entry',type:'technical'}})); });
   post.mockRejectedValueOnce({response:{data:{error:'Temporarily unavailable'}}});
-  await act(async () => tree.root.findByType('button').props.onClick());
+  await act(async () => tree.root.findAllByType('button').find(b=>b.children.includes('Generate quick study notes')).props.onClick());
   expect(JSON.stringify(tree.toJSON())).toContain('Temporarily unavailable');
   post.mockResolvedValueOnce({data:{topics:[{topic:'Regression testing',summary:'Detect unintended changes',keyPoints:['Choose risk-based coverage'],practiceTask:'Explain a regression suite'}]}});
-  await act(async () => tree.root.findByType('button').props.onClick());
+  await act(async () => tree.root.findAllByType('button').find(b=>b.children.includes('Generate quick study notes')).props.onClick());
   expect(post).toHaveBeenLastCalledWith('/interviews/owned/preparation');
   expect(tree.root.findByType('details').props.open).toBe(true);
   expect(JSON.stringify(tree.toJSON())).toContain('Choose risk-based coverage');

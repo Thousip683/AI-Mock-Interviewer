@@ -1,15 +1,17 @@
+import { enterFullscreen, leaveFullscreen } from '@/lib/fullscreen';
+import LiveInterviewStage from './LiveInterviewStage';
 import DeviceCheck from './DeviceCheck';
 import PreparationGuide from '@/components/PreparationGuide';
 import AudioWaveform from '@/components/AudioWaveform';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mic, MicOff, AudioLines, ArrowLeft, Headphones, Loader2, PhoneOff } from 'lucide-react';
+import { GraduationCap, Mic, MicOff, AudioLines, ArrowLeft, Headphones, Loader2, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useLiveInterview from '@/hooks/useLiveInterview';
 
 const labels = { idle: 'Ready when you are', connecting: 'Connecting your interviewer…', listening: 'Listening to you', speaking: 'Interviewer speaking', finishing: 'Saving transcript & preparing feedback…', error: 'Session paused', finished: 'Interview complete' };
 
-export default function LiveInterview({ interview }) {
+export default function LiveInterview({ interview, embedded = false }) {
   const id = interview._id;
   const navigate = useNavigate();
   const live = useLiveInterview(id);
@@ -18,7 +20,7 @@ export default function LiveInterview({ interview }) {
   const [elapsed, setElapsed] = useState(interview.liveDurationSeconds || 0);
   const active = ['listening', 'speaking'].includes(live.status);
   const busy = ['connecting', 'finishing'].includes(live.status);
-  useEffect(()=>{if(!active)return;const started=Date.now();const initial=elapsed;const timer=setInterval(()=>setElapsed(initial+Math.floor((Date.now()-started)/1000)),1000);return()=>clearInterval(timer);},[active]);
+  useEffect(()=>{if(!active || live.paused)return;const started=Date.now();const initial=elapsed;const timer=setInterval(()=>setElapsed(initial+Math.floor((Date.now()-started)/1000)),1000);return()=>clearInterval(timer);},[active, live.paused]);
   const transcript = live.transcript.length ? live.transcript : interview.liveTranscript || [];
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, [transcript]);
   useEffect(() => {
@@ -28,12 +30,24 @@ export default function LiveInterview({ interview }) {
     return () => window.removeEventListener('beforeunload', warn);
   }, [active, busy]);
 
+  if (active || busy) return <LiveInterviewStage interview={interview} live={live} elapsed={elapsed} transcript={transcript} onFinish={async()=>{if(await live.finish()) { await leaveFullscreen(); navigate(`/feedback/${id}`); }}} />;
+
+  if (embedded && !active && !busy) return <section className="mt-6 rounded-2xl border border-primary/10 bg-gradient-to-br from-[#f5e7e6] to-white p-5 sm:p-6" aria-label="Interview setup">
+    <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-3"><DeviceCheck compact/><PreparationGuide interview={interview} compact/></div>
+    <div className="mt-5 flex flex-col gap-4 border-t border-primary/10 pt-5 sm:flex-row sm:items-end sm:justify-between">
+      <label className="block text-xs font-medium text-muted-foreground sm:w-56">Interviewer voice<select className="mt-2 block h-11 w-full rounded-xl border bg-background px-3 text-sm text-foreground" value={voice} onChange={e=>setVoice(e.target.value)}><option value="Kore">Kore · composed</option><option value="Puck">Puck · upbeat</option><option value="Zephyr">Zephyr · bright</option><option value="Charon">Charon · steady</option><option value="Fenrir">Fenrir · direct</option></select></label>
+      <Button className="h-11 rounded-full px-6" onClick={()=>{ enterFullscreen(); live.start(voice); }}><GraduationCap className="mr-2 h-5 w-5" aria-hidden="true" />{transcript.length ? 'Reconnect & continue' : 'Start live interview'}</Button>
+    </div>
+    <p className="mt-3 text-xs leading-5 text-muted-foreground">Use headphones. Your microphone streams to Gemini; transcripts are saved, audio recordings are not.</p>
+    {live.error && <p role="alert" className="mt-3 text-sm text-red-800">{live.error}</p>}
+  </section>;
+
   return (
-    <main className={active || busy ? "live-focus-overlay" : "container max-w-5xl py-8"}>
-      <Button hidden={active || busy} variant="ghost" className="mb-5" disabled={busy || active} onClick={() => navigate('/dashboard')}>
+    <main className={active || busy ? "live-focus-overlay" : embedded ? "mt-6" : "container max-w-5xl py-8"}>
+      <Button hidden={embedded || active || busy} variant="ghost" className="mb-5" disabled={busy || active} onClick={() => navigate('/dashboard')}>
         <ArrowLeft className="mr-2 h-4 w-4" /> Back to dashboard
       </Button>
-      <div hidden={active || busy} className="mb-7 flex flex-wrap items-center justify-between gap-4">
+      <div hidden={embedded || active || busy} className="mb-7 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-primary">Live voice interview</p>
           <h1 className="text-3xl font-bold">{interview.role}</h1>
@@ -58,7 +72,7 @@ export default function LiveInterview({ interview }) {
           </label>}
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             {live.status === 'connecting' && <Button variant="secondary" onClick={live.cancel}>Cancel connection</Button>}
-            {!active && !busy && <Button variant="gradient" size="lg" onClick={() => live.start(voice)}><Mic className="mr-2 h-4 w-4" />{transcript.length ? 'Reconnect & continue' : 'Start live interview'}</Button>}
+            {!active && !busy && <Button variant="gradient" size="lg" onClick={() => { enterFullscreen(); live.start(voice); }}><Mic className="mr-2 h-4 w-4" />{transcript.length ? 'Reconnect & continue' : 'Start live interview'}</Button>}
             {active && <Button variant="secondary" onClick={live.toggleMute} aria-pressed={live.muted}>{live.muted ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}{live.muted ? 'Unmute' : 'Mute'}</Button>}
             {(active || transcript.some(turn => turn.speaker === 'user')) && <Button variant="destructive" disabled={busy} onClick={async () => { if (await live.finish()) navigate(`/feedback/${id}`); }}><PhoneOff className="mr-2 h-4 w-4" />End interview & get feedback</Button>}
           </div>

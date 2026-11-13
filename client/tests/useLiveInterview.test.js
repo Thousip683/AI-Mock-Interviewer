@@ -117,3 +117,43 @@ it('cancels microphone setup and releases a permission grant that arrives later'
   expect(track.stop).toHaveBeenCalled();
   expect(post).not.toHaveBeenCalled();
 });
+
+it('withholds early captions until audio plays and clears them when playback ends', async () => {
+  vi.useFakeTimers();
+  try {
+    await start();
+    let source;
+    context.createGain=()=>({gain:{setValueAtTime:vi.fn(),linearRampToValueAtTime:vi.fn()},connect:vi.fn(),disconnect:vi.fn()});
+    context.createBufferSource=()=>source={connect:vi.fn(node=>node),start:vi.fn(),stop:vi.fn(),disconnect:vi.fn()};
+    act(()=>socket.emit({type:'transcript',transcript:[{speaker:'ai',text:'Tell me about your experience.'}]}));
+    act(()=>vi.advanceTimersByTime(120));
+    expect(hook.caption).toBe('');
+    act(()=>socket.emit({type:'audio',data:btoa(String.fromCharCode(0,0,0,0)),mimeType:'audio/pcm;rate=24000'}));
+    context.currentTime=0.6;
+    act(()=>vi.advanceTimersByTime(120));
+    expect(hook.caption).toBeTruthy();
+    expect(hook.caption.length).toBeLessThan('Tell me about your experience.'.length);
+    act(()=>{socket.emit({type:'turnComplete'});source.onended();});
+    expect(hook.caption).toBe('');
+  } finally { vi.useRealTimers(); }
+});
+
+it('pauses microphone capture and audio and preserves mute on resume', async () => {
+  await start();
+  context.suspend=vi.fn(async()=>{context.state='suspended';});
+  await act(async()=>hook.togglePause());
+  expect(hook.paused).toBe(true);
+  expect(track.enabled).toBe(false);
+  expect(context.suspend).toHaveBeenCalledOnce();
+  const calls=socket.send.mock.calls.length;
+  act(()=>capture.port.onmessage({data:new Float32Array(2048)}));
+  expect(socket.send).toHaveBeenCalledTimes(calls);
+  await act(async()=>hook.togglePause());
+  expect(hook.paused).toBe(false);
+  expect(track.enabled).toBe(true);
+  act(()=>hook.toggleMute());
+  await act(async()=>hook.togglePause());
+  await act(async()=>hook.togglePause());
+  expect(track.enabled).toBe(false);
+  expect(hook.muted).toBe(true);
+});

@@ -178,7 +178,7 @@ export default function Feedback() {
   }));
 
   return (
-    <div className="container py-8 space-y-8">
+    <div className="feedback-page container py-8 space-y-8">
       <ReportPrint feedback={feedback}/>
       <section className="rounded-xl border bg-primary/5 p-5"><h2 className="text-2xl">Your next three steps</h2><ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">{(feedback.improvements?.length ? feedback.improvements : ['Review your answers.', 'Choose one topic to practice.', 'Retest after completing your study task.']).slice(0,3).map((item,i)=><li key={i}>{item}</li>)}</ol></section>
       {feedback.practiceOf && <p className="text-sm"><Link className="underline" to={`/feedback/${feedback.practiceOf}`}>Compare with the original report →</Link> Targeted practice uses different questions; score changes are not a controlled measure of improvement.</p>}

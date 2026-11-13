@@ -4,7 +4,6 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useUser } from '@clerk/react';
 import { Loader2 } from 'lucide-react';
 
-import QuickInterview from '@/components/QuickInterview';
 import Privacy from '@/components/Privacy';
 import DataControls from '@/components/DataControls';
 import Navbar from '@/components/Navbar';
@@ -71,7 +70,7 @@ export default function App() {
           }
         />
 
-        <Route path="/quick-interview" element={<QuickInterview />} />
+
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/data" element={<ProtectedRoute><Navbar/><DataControls/></ProtectedRoute>} />
         {/* Login */}

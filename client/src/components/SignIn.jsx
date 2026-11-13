@@ -55,7 +55,7 @@ export default function SignIn() {
             routing="path"
             path="/login"
             signUpUrl={`/sign-up?redirect=${encodeURIComponent(destination)}`}
-            forceRedirectUrl={destination} signUpFallbackRedirectUrl="/dashboard"
+            forceRedirectUrl={destination} signUpFallbackRedirectUrl="/"
           />
         </div>
 

@@ -79,19 +79,19 @@ it('supports logo, navigation, account menu, signed-out mobile menu, back and fo
   expect(signOut).toHaveBeenCalledWith({ redirectUrl: '/' });
   await clickLink('/');
   auth.signedIn = false;
-  expect(output()).toContain('Start the interview');
+  expect(output()).toContain('Interview for a role');
 });
 it('validates configuration, preserves wizard choices and handles a failed create submission', async () => {
   await render('/create-interview'); expect(button('Next').props.disabled).toBe(true);
   const values = ['Backend Developer', 'technical', 'mid'];
   act(() => tree.root.findAllByType('select').slice(0,3).forEach((item, index) => item.props.onChange({ target: { value: values[index] } })));
   await act(async () => button('Next').props.onClick()); expect(output()).toContain('Additional Details');
-  act(() => tree.root.findByProps({ id: 'job-description' }).props.onChange({ target: { value: 'Build APIs' } }));
+  act(() => tree.root.findByProps({ id: 'focus-areas' }).props.onChange({ target: { value: 'Build APIs' } }));
   await act(async () => button('Review').props.onClick());
   post.mockRejectedValueOnce({ response: { data: { error: 'Service unavailable' } } });
-  await act(async () => { await button('Prepare for interview').props.onClick(); }); expect(output()).toContain('Service unavailable');
-  await act(async () => { await button('Prepare for interview').props.onClick(); });
-  expect(post).toHaveBeenLastCalledWith('/interviews', expect.objectContaining({ role: 'Backend Developer', jobDescription: 'Build APIs' }));
+  await act(async () => { await button('Start interview').props.onClick(); }); expect(output()).toContain('Service unavailable');
+  await act(async () => { await button('Start interview').props.onClick(); });
+  expect(post).toHaveBeenLastCalledWith('/interviews', expect.objectContaining({ role: 'Backend Developer', focusArea: 'Build APIs' }));
   expect(location.pathname).toBe('/interview/new');
 });
 it('creates a fresh interview when Practice again is selected', async () => {
@@ -130,8 +130,29 @@ it('opens the requested roadmap tab from a real deep link', async () => {
   await render('/feedback/saved?tab=roadmap');
   expect(tree.root.findAll(item => item.props.value === 'roadmap' && typeof item.props.onValueChange === 'function').length).toBeGreaterThan(0);
 });
-it('accepts only known local post-login destinations', () => {
-  expect(loginDestination({ search: '?redirect=%2Ffeedback%2Fsaved', state: null })).toBe('/feedback/saved');
-  for (const target of ['https://evil.test', '//evil.test', '/login', '/unknown']) expect(loginDestination({ search: `?redirect=${encodeURIComponent(target)}` })).toBe('/dashboard');
+it('always returns home after login, including when a redirect was requested', () => {
+  expect(loginDestination({ search: '?redirect=%2Ffeedback%2Fsaved', state: null })).toBe('/');
+  for (const target of ['https://evil.test', '//evil.test', '/login', '/unknown']) expect(loginDestination({ search: `?redirect=${encodeURIComponent(target)}` })).toBe('/');
 });
 
+
+it('prepares and starts live interviews from the setup page without another preparation route', async () => {
+  await render('/create-interview');
+  const values = ['Backend Developer', 'technical', 'mid'];
+  act(() => {
+    tree.root.findAllByType('select').slice(0,3).forEach((item,index)=>item.props.onChange({target:{value:values[index]}}));
+    tree.root.findAllByType('input').find(item=>item.props.name==='mode' && item.props.value==='live').props.onChange();
+  });
+  await act(async()=>button('Next').props.onClick());
+  await act(async()=>button('Review').props.onClick());
+  expect(location.pathname).toBe('/create-interview');
+  expect(button('Study notes')).toBeDefined();
+  expect(output()).toContain('Test microphone');
+  expect(button('Start live interview')).toBeDefined();
+  expect(post).toHaveBeenCalledWith('/interviews', expect.objectContaining({mode:'live'}));
+  const creates=()=>post.mock.calls.filter(([url])=>url==='/interviews').length;
+  expect(creates()).toBe(1);
+  await act(async()=>button('Back').props.onClick());
+  await act(async()=>button('Review').props.onClick());
+  expect(creates()).toBe(1);
+});

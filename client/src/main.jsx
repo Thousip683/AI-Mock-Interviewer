@@ -6,7 +6,6 @@ import App from './App';
 import './index.css';
 import './career.css';
 import LandingPage from './components/LandingPage';
-import QuickInterview from './components/QuickInterview';
 import Privacy from './components/Privacy';
 import { Routes, Route, Link } from 'react-router-dom';
 import AuthProvider from "./components/AuthProvider";
@@ -44,7 +43,7 @@ root.render(
           </AuthProvider>
       </ClerkProvider>
     ) : (
-      <BrowserRouter><Routes><Route path="/" element={<LandingPage/>}/><Route path="/quick-interview" element={<QuickInterview/>}/><Route path="/privacy" element={<Privacy/>}/><Route path="*" element={<><div className="p-5"><Link to="/">← Back to public practice</Link></div><MissingConfiguration/></>}/></Routes></BrowserRouter>
+      <BrowserRouter><Routes><Route path="/" element={<LandingPage/>}/><Route path="/privacy" element={<Privacy/>}/><Route path="*" element={<><div className="p-5"><Link to="/">← Back to public practice</Link></div><MissingConfiguration/></>}/></Routes></BrowserRouter>
     )}
   </React.StrictMode>
 );

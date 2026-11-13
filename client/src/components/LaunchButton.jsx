@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowUpRight } from 'lucide-react';
-export default function LaunchButton({ to = '/quick-interview', children = 'Start the interview', variant }) {
+export default function LaunchButton({ to = '/create-interview', children = 'Start the interview', variant }) {
   const [launching, setLaunching] = useState(false);
   const timer = useRef();
   const navigate = useNavigate();

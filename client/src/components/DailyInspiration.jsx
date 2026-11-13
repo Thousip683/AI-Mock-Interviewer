@@ -20,6 +20,6 @@ export default function DailyInspiration() {
         <div className="tip-controls"><button aria-label="Previous interview tip" onClick={()=>setOffset((offset+dailyTips.length-1)%dailyTips.length)}><ArrowLeft size={17}/></button><span aria-live="polite">{offset===0?'A fresh tip each day':`${offset+1} / ${dailyTips.length} tips`}</span><button aria-label="Next interview tip" onClick={()=>setOffset((offset+1)%dailyTips.length)}><ArrowRight size={17}/></button></div>
       </article>
     </div>
-    <div className="encouragement-notes" data-reveal><p>“Your first attempt is a starting point, not a verdict.”</p><Link to="/quick-interview">Put today’s tip into practice <ArrowRight size={16}/></Link></div>
+    <div className="encouragement-notes" data-reveal><p>“Your first attempt is a starting point, not a verdict.”</p><Link to="/create-interview">Put today’s tip into practice <ArrowRight size={16}/></Link></div>
   </section>;
 }
