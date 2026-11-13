@@ -57,7 +57,11 @@ export default function useLiveInterview(id) {
       await resource.context.resume();
       if (!active()) return;
       resource.stream = await navigator.mediaDevices.getUserMedia({ audio: {
-        channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        // Prevent automatic gain from raising steady fan/room noise during pauses.
+        autoGainControl: false,
       } });
       if (!active()) { stopAudio(resource); return; }
       if (!resource.context.audioWorklet) throw new Error('AudioWorklet is unavailable. Try a current browser on HTTPS or localhost.');
@@ -72,7 +76,7 @@ export default function useLiveInterview(id) {
         if (!active() || !resource.ready || resource.ending || resource.muted) return;
         const samples = event.data;
         const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
-        setLevel(Math.min(1, rms * 5));
+        if (!resource.playbackActive) setLevel(Math.min(1, rms * 5));
         if (resource.ws?.readyState === WebSocket.OPEN) {
           if (resource.ws.bufferedAmount > 256 * 1024) { fail('Your connection is too slow for live audio. Reconnect when the network improves.'); return; }
           resource.ws.send(JSON.stringify({ type: 'audio', data: encodePcm(samples, resource.context.sampleRate) }));
@@ -97,24 +101,42 @@ export default function useLiveInterview(id) {
           const context = resource.context;
           const samples = decodePcm(message.data);
           if (!samples.length) return;
+          resource.playbackActive = true;
+          const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+          setLevel(Math.min(1, rms * 4));
           const sampleRate = Number(message.mimeType?.match(/rate=(\d+)/)?.[1] || 24000);
           const buffer = context.createBuffer(1, samples.length, sampleRate);
           buffer.copyToChannel(samples, 0);
           const source = context.createBufferSource();
+          const outputGain = context.createGain();
           source.buffer = buffer;
-          source.connect(context.destination);
+          source.connect(outputGain).connect(context.destination);
           resource.sources.add(source);
           source.onended = () => {
             resource.sources.delete(source);
-            if (active() && !resource.ending && !resource.sources.size) setStatus('listening');
+            source.disconnect();
+            outputGain.disconnect();
+            if (active() && !resource.ending && !resource.sources.size) {
+              resource.playbackActive = false;
+              setLevel(0);
+              setStatus('listening');
+            }
           };
           const when = Math.max(context.currentTime + 0.02, resource.nextTime);
           if (when - context.currentTime > 30) { fail('Audio playback fell behind. Please reconnect.'); return; }
+          // Tiny edge fades prevent clicks when consecutive raw PCM chunks do not meet at zero.
+          const edgeFade = Math.min(0.0025, buffer.duration / 4);
+          outputGain.gain.setValueAtTime(0, when);
+          outputGain.gain.linearRampToValueAtTime(1, when + edgeFade);
+          outputGain.gain.setValueAtTime(1, when + buffer.duration - edgeFade);
+          outputGain.gain.linearRampToValueAtTime(0, when + buffer.duration);
           source.start(when);
           resource.nextTime = when + buffer.duration;
           setStatus('speaking');
         } else if (message.type === 'interrupted') {
           stopPlayback(resource);
+          resource.playbackActive = false;
+          setLevel(0);
           if (!resource.ending) setStatus('listening');
         } else if (message.type === 'error') {
           fail(message.message);

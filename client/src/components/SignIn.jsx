@@ -35,12 +35,14 @@ export default function SignIn() {
         </div>
 
         {/* Clerk Sign In */}
-        <div className="bg-white rounded-2xl shadow-sm border p-6">
+        <div className="w-full flex justify-center">
           <ClerkSignIn 
             appearance={{
               elements: {
                 rootBox: 'w-full',
-                card: 'shadow-none border-0 p-0',
+                cardBox: 'w-full max-w-md overflow-hidden rounded-2xl border border-border bg-white shadow-xl',
+                card: 'w-full !rounded-none !border-0 !bg-transparent !p-5 !shadow-none sm:!p-6',
+                footer: '!bg-transparent',
                 headerTitle: 'hidden',
                 headerSubtitle: 'hidden',
                 socialButtonsBlockButton: 'rounded-lg border border-input hover:bg-accent transition-colors',

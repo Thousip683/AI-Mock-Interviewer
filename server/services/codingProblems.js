@@ -1,0 +1,18 @@
+// Inputs and outputs are JSON; submissions implement solve(input).
+export const problems = [
+  ['sum-array','Array total','arrays','easy','Return the sum of the integers.', [[[],0],[[1,2,3],6],[[-2,5],3],[[0],0]], 'Accumulate a running total.'],
+  ['maximum','Largest value','arrays','easy','Return the largest integer, or null for an empty array.', [[[1,8,3],8],[[],null],[[-4,-2],-2],[[7],7]], 'Track the largest value seen so far.'],
+  ['reverse','Reverse text','strings','easy','Reverse the input ASCII string.', [['hello','olleh'],['',''],['abc','cba'],['a','a']], 'Visit characters from the end.'],
+  ['palindrome','Palindrome','strings','easy','Return whether an ASCII string reads identically backwards. Case matters.', [['aba',true],['abc',false],['',true],['Aa',false]], 'Compare characters at opposite ends.'],
+  ['unique','Remove duplicates','hash maps','easy','Return unique integers in their original order.', [[[1,2,1],[1,2]],[[],[]],[[3,3],[3]],[[-1,2,-1],[-1,2]]], 'Remember values already encountered.'],
+  ['evens','Keep even numbers','arrays','easy','Return only even integers in original order.', [[[1,2,4],[2,4]],[[],[]],[[-2,3],[-2]],[[1],[]]], 'Use the remainder after division by two.'],
+  ['count-vowels','Count vowels','strings','easy','Count ASCII vowels aeiou, ignoring case.', [['Hello',2],['',0],['AEIOU',5],['xyz',0]], 'Normalize case before checking membership.'],
+  ['sorted','Ascending order','sorting','easy','Return the integers sorted in ascending order.', [[[3,1,2],[1,2,3]],[[],[]],[[2,2,-1],[-1,2,2]],[[9],[9]]], 'Use a numeric comparator in JavaScript.'],
+  ['second','Second distinct largest','arrays','medium','Return the second distinct largest integer, or null if it does not exist.', [[[1,3,2],2],[[2,2],null],[[],null],[[-1,-3,-2],-2]], 'Duplicates must not count as a second value.'],
+  ['binary','Find target','searching','medium','Input is {numbers: sorted integers, target: integer}. Return its index or -1. Values are distinct.', [[{numbers:[1,3,5],target:3},1],[{numbers:[],target:2},-1],[{numbers:[2],target:2},0],[{numbers:[1,4],target:3},-1]], 'Halve the remaining search interval.'],
+  ['two-sum','Two sum exists','hash maps','medium','Input is {numbers: integers, target: integer}. Return whether two distinct positions sum to target.', [[{numbers:[2,7,11],target:9},true],[{numbers:[3],target:6},false],[{numbers:[3,3],target:6},true],[{numbers:[],target:0},false]], 'Look for the complement before inserting the current value.'],
+  ['rotate','Rotate right','arrays','medium','Input is {numbers: integers, k: nonnegative integer}. Rotate right by k positions.', [[{numbers:[1,2,3],k:1},[3,1,2]],[{numbers:[],k:3},[]],[{numbers:[1,2],k:4},[1,2]],[{numbers:[1,2,3],k:2},[2,3,1]]], 'Reduce k modulo the array length.'],
+  ['anagram','Anagram check','strings','medium','Input is two lowercase ASCII strings. Return whether their character counts match.', [[['eat','tea'],true],[['a','aa'],false],[['',''],true],[['ab','ac'],false]], 'Compare character frequencies.'],
+  ['merge','Merge sorted arrays','sorting','medium','Input is two ascending integer arrays. Return their merged ascending array.', [[[[1,3],[2,4]],[1,2,3,4]],[[[],[]],[]],[[[1],[1]],[1,1]],[[[],[-2]],[-2]]], 'Advance two pointers, choosing the smaller next element.'],
+  ['streak','Longest consecutive streak','hash maps','medium','Return the length of the longest consecutive integer sequence, ignoring duplicates.', [[[100,4,200,1,3,2],4],[[],0],[[1,1,2],2],[[-2,-1,0],3]], 'Start counting only at values without a predecessor.'],
+].map(([id,title,topic,difficulty,description,tests,hint]) => ({id,title,topic,difficulty,description,tests,hint}));

@@ -1,23 +1,37 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { useUser } from '@clerk/react';
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import api from '@/lib/api';
-import { formatDate } from '@/lib/utils';
-import { 
-  PlusCircle, Clock, TrendingUp, Target, 
-  ArrowRight, Brain, Star, Loader2, 
-  BarChart3, MessageSquare, CheckCircle2
-} from 'lucide-react';
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+import { useUser } from "@clerk/react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import api from "@/lib/api";
+import { formatDate } from "@/lib/utils";
+import {
+  PlusCircle,
+  Clock,
+  TrendingUp,
+  Target,
+  ArrowRight,
+  Brain,
+  Star,
+  Loader2,
+  BarChart3,
+  MessageSquare,
+  CheckCircle2,
+} from "lucide-react";
 
 export default function Dashboard() {
   const { user } = useUser();
   const [interviews, setInterviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState("");
   const [stats, setStats] = useState({
     total: 0,
     completed: 0,
@@ -30,26 +44,38 @@ export default function Dashboard() {
   }, []);
 
   const fetchInterviews = async () => {
-    setLoading(true); setLoadError('');
+    setLoading(true);
+    setLoadError("");
     try {
-      const res = await api.get('/interviews');
+      const res = await api.get("/interviews");
       const data = res.data;
-      if (!Array.isArray(data)) throw new Error('Unexpected interview response');
+      if (!Array.isArray(data))
+        throw new Error("Unexpected interview response");
       setInterviews(data);
 
-      const completed = data.filter(i => i.status === 'completed');
-      const avgScore = completed.length > 0
-        ? Math.round(completed.reduce((sum, i) => sum + (i.score || 0), 0) / completed.length)
-        : 0;
+      const completed = data.filter((i) => i.status === "completed");
+      const avgScore =
+        completed.length > 0
+          ? Math.round(
+              completed.reduce((sum, i) => sum + (i.score || 0), 0) /
+                completed.length,
+            )
+          : 0;
 
       setStats({
         total: data.length,
         completed: completed.length,
         averageScore: avgScore,
-        improvement: completed.length > 1 ? (completed[0].score || 0) - (completed[1].score || 0) : null,
+        improvement:
+          completed.length > 1
+            ? (completed[0].score || 0) - (completed[1].score || 0)
+            : null,
       });
     } catch (err) {
-      setLoadError(err.response?.data?.error || 'Could not load interviews. Check your connection and retry.');
+      setLoadError(
+        err.response?.data?.error ||
+          "Could not load interviews. Check your connection and retry.",
+      );
     } finally {
       setLoading(false);
     }
@@ -63,13 +89,22 @@ export default function Dashboard() {
     );
   }
 
-  if (loadError) return <div className="container py-16"><h1 className="text-3xl">Unable to load interviews</h1><p role="alert" className="my-5">{loadError}</p><Button onClick={fetchInterviews}>Try again</Button></div>;
+  if (loadError)
+    return (
+      <div className="container py-16">
+        <h1 className="text-3xl">Unable to load interviews</h1>
+        <p role="alert" className="my-5">
+          {loadError}
+        </p>
+        <Button onClick={fetchInterviews}>Try again</Button>
+      </div>
+    );
 
   const getStatusBadge = (status) => {
     switch (status) {
-      case 'completed':
+      case "completed":
         return <Badge variant="success">Completed</Badge>;
-      case 'in_progress':
+      case "in_progress":
         return <Badge variant="warning">In Progress</Badge>;
       default:
         return <Badge variant="secondary">Pending</Badge>;
@@ -82,22 +117,47 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Welcome back, {user?.firstName || 'User'} 👋
+            Welcome back, {user?.firstName || "User"} 👋
           </h1>
           <p className="text-muted-foreground mt-1">
             Here's your interview preparation overview
           </p>
         </div>
-        <Button variant="gradient" size="lg" className="group" asChild><Link to="/create-interview">
+        <Button variant="gradient" size="lg" className="group" asChild>
+          <Link to="/create-interview">
             <PlusCircle className="w-5 h-5 mr-2" />
             Start New Interview
             <ArrowRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </Link></Button>
+          </Link>
+        </Button>
       </div>
 
       <section className="surface-card flex items-center justify-between gap-6 overflow-hidden rounded-3xl border bg-gradient-to-r from-[#f5e7e6] to-white px-6 py-5 sm:px-8">
-        <div><p className="text-xs font-semibold uppercase tracking-widest text-primary">Your personal studio</p><h2 className="mt-2 text-3xl sm:text-4xl">Make room for your next breakthrough.</h2><p className="mt-2 max-w-xl text-sm leading-7 text-muted-foreground">Start a conversation, revisit your notes, or take the next step on your learning path.</p><Link to="/feedback" className="mt-3 inline-flex items-center gap-2 rounded-lg py-2 text-sm font-semibold text-primary">Revisit your learning <ArrowRight className="h-4 w-4" /></Link></div>
-        <img src="/images/interview-studio.svg" alt="" className="hidden w-44 shrink-0 drop-shadow-xl sm:block" width="176" height="160" />
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">
+            Your personal studio
+          </p>
+          <h2 className="mt-2 text-3xl sm:text-4xl">
+            Make room for your next breakthrough.
+          </h2>
+          <p className="mt-2 max-w-xl text-sm leading-7 text-muted-foreground">
+            Start a conversation, revisit your notes, or take the next step on
+            your learning path.
+          </p>
+          <Link
+            to="/feedback"
+            className="mt-3 inline-flex items-center gap-2 rounded-lg py-2 text-sm font-semibold text-primary"
+          >
+            Revisit your learning <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+        <img
+          src="/images/interview-studio.svg"
+          alt=""
+          className="hidden w-44 shrink-0 drop-shadow-xl sm:block"
+          width="176"
+          height="160"
+        />
       </section>
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -105,7 +165,9 @@ export default function Dashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Interviews</p>
+                <p className="text-sm text-muted-foreground">
+                  Total Interviews
+                </p>
                 <p className="text-3xl font-bold mt-1">{stats.total}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center">
@@ -147,8 +209,14 @@ export default function Dashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Last score change</p>
-                <p className="text-3xl font-bold mt-1">{stats.improvement === null ? '—' : `${stats.improvement > 0 ? '+' : ''}${stats.improvement} pts`}</p>
+                <p className="text-sm text-muted-foreground">
+                  Last score change
+                </p>
+                <p className="text-3xl font-bold mt-1">
+                  {stats.improvement === null
+                    ? "—"
+                    : `${stats.improvement > 0 ? "+" : ""}${stats.improvement} pts`}
+                </p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
                 <TrendingUp className="w-6 h-6 text-amber-600" />
@@ -175,28 +243,44 @@ export default function Dashboard() {
               <EmptyState />
             ) : (
               interviews.map((interview) => (
-                <InterviewCard key={interview._id} interview={interview} getStatusBadge={getStatusBadge} />
+                <InterviewCard
+                  key={interview._id}
+                  interview={interview}
+                  getStatusBadge={getStatusBadge}
+                />
               ))
             )}
           </TabsContent>
 
           <TabsContent value="completed" className="space-y-4">
-            {interviews.filter(i => i.status === 'completed').length === 0 ? (
+            {interviews.filter((i) => i.status === "completed").length === 0 ? (
               <EmptyState />
             ) : (
-              interviews.filter(i => i.status === 'completed').map((interview) => (
-                <InterviewCard key={interview._id} interview={interview} getStatusBadge={getStatusBadge} />
-              ))
+              interviews
+                .filter((i) => i.status === "completed")
+                .map((interview) => (
+                  <InterviewCard
+                    key={interview._id}
+                    interview={interview}
+                    getStatusBadge={getStatusBadge}
+                  />
+                ))
             )}
           </TabsContent>
 
           <TabsContent value="pending" className="space-y-4">
-            {interviews.filter(i => i.status !== 'completed').length === 0 ? (
+            {interviews.filter((i) => i.status !== "completed").length === 0 ? (
               <EmptyState />
             ) : (
-              interviews.filter(i => i.status !== 'completed').map((interview) => (
-                <InterviewCard key={interview._id} interview={interview} getStatusBadge={getStatusBadge} />
-              ))
+              interviews
+                .filter((i) => i.status !== "completed")
+                .map((interview) => (
+                  <InterviewCard
+                    key={interview._id}
+                    interview={interview}
+                    getStatusBadge={getStatusBadge}
+                  />
+                ))
             )}
           </TabsContent>
         </Tabs>
@@ -207,7 +291,13 @@ export default function Dashboard() {
 
 function InterviewCard({ interview, getStatusBadge }) {
   return (
-    <Link to={interview.status === 'completed' ? `/feedback/${interview._id}` : `/interview/${interview._id}`}>
+    <Link
+      to={
+        interview.status === "completed"
+          ? `/feedback/${interview._id}`
+          : `/interview/${interview._id}`
+      }
+    >
       <Card className="hover:shadow-md hover:border-primary/20 transition-all duration-200 group cursor-pointer">
         <CardContent className="flex items-center justify-between py-4">
           <div className="flex items-center gap-4">
@@ -219,11 +309,17 @@ function InterviewCard({ interview, getStatusBadge }) {
                 {interview.role} - {interview.type} Interview
               </h3>
               <div className="flex items-center gap-3 mt-1">
-                <span className="text-sm text-muted-foreground">{formatDate(interview.createdAt)}</span>
+                <span className="text-sm text-muted-foreground">
+                  {formatDate(interview.createdAt)}
+                </span>
                 {getStatusBadge(interview.status)}
-                {interview.mode === 'live' && <Badge variant="secondary">Live voice</Badge>}
-                {interview.status === 'completed' && (
-                  <span className="text-sm font-medium text-emerald-600">{interview.score}% Score</span>
+                {interview.mode === "live" && (
+                  <Badge variant="secondary">Live voice</Badge>
+                )}
+                {interview.status === "completed" && (
+                  <span className="text-sm font-medium text-emerald-600">
+                    {interview.score}% Score
+                  </span>
                 )}
               </div>
             </div>
@@ -250,12 +346,13 @@ function EmptyState() {
         <p className="text-muted-foreground mb-6 text-center max-w-sm">
           Start your first mock interview to practice and improve your skills
         </p>
-        <Button variant="gradient" asChild><Link to="/create-interview">
+        <Button variant="gradient" asChild>
+          <Link to="/create-interview">
             <PlusCircle className="w-4 h-4 mr-2" />
             Create Your First Interview
-          </Link></Button>
+          </Link>
+        </Button>
       </CardContent>
     </Card>
   );
 }
-

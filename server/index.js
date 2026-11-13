@@ -12,6 +12,7 @@ import { clerkMiddleware } from '@clerk/express';
 import connectDB from './config/db.js';
 import interviewRoutes from './routes/interviews.js';
 import liveRoutes from './routes/live.js';
+import codingRoutes from './routes/coding.js';
 import { attachLiveServer } from './services/liveSocket.js';
 
 
@@ -31,8 +32,9 @@ if (process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith('AIzaSy
 console.log(`🍃 MongoDB URI: ${process.env.MONGODB_URI ? '✅ (Configured)' : '❌ (Missing - will fallback to local storage)'}`);
 console.log('====================================================');
 
-// Connect to MongoDB
-connectDB();
+// Resolve the storage backend before serving requests. If requests arrive before
+// MongoDB is ready, the repository can write to local JSON and later read MongoDB.
+await connectDB();
 
 // Middleware
 app.use(cors());
@@ -63,6 +65,7 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/interviews', liveRoutes);
+app.use('/api/coding', codingRoutes);
 
 // Health Check
 app.get('/api/health', (req, res) => {

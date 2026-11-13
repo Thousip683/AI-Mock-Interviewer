@@ -11,6 +11,7 @@ import CreateInterview from '@/components/CreateInterview';
 import InterviewScreen from '@/components/InterviewScreen';
 import Feedback from '@/components/Feedback';
 import SignIn from '@/components/SignIn';
+import CodingRound from '@/components/CodingRound';
 import SignUpPage from '@/components/SignUp';
 
 function ProtectedRoute({ children }) {
@@ -88,6 +89,7 @@ export default function App() {
           }
         />
 
+        <Route path="/coding" element={<ProtectedRoute><Navbar /><CodingRound /></ProtectedRoute>} />
         {/* Dashboard */}
         <Route
           path="/dashboard"

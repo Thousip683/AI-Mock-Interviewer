@@ -39,6 +39,11 @@ async function callGemini(prompt, label) {
         let text = response.text();
         const duration = Date.now() - startTime;
         console.log(`[GEMINI] 📥 [${label}] response received from ${modelName} in ${duration}ms (${text.length} chars)`);
+        // Log response metadata, not generated text: feedback includes candidate answers.
+        const finishReason = response.candidates?.[0]?.finishReason || 'unknown';
+        const promptTokens = response.usageMetadata?.promptTokenCount;
+        const responseTokens = response.usageMetadata?.candidatesTokenCount;
+        console.log(`[GEMINI] ℹ️ [${label}] finishReason=${finishReason}, promptTokens=${promptTokens ?? 'unknown'}, responseTokens=${responseTokens ?? 'unknown'}`);
 
         // Strip markdown code fences if present (```json ... ``` or ``` ... ```)
         text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/m, '').trim();
@@ -435,7 +440,10 @@ function getFallbackFeedback(questions, answers) {
 
 // Normalize model output before it reaches persistence or the report UI.
 export function normalizeFeedback(raw, questions, answers) {
-  if (!raw || !Array.isArray(raw.questionFeedback) || raw.questionFeedback.length !== questions.length) throw new Error('Incomplete feedback response');
+  if (!raw || !Array.isArray(raw.questionFeedback) || raw.questionFeedback.length !== questions.length) {
+    const received = Array.isArray(raw?.questionFeedback) ? raw.questionFeedback.length : 'not an array';
+    throw new Error(`Incomplete feedback response: expected ${questions.length} questionFeedback entries, received ${received}`);
+  }
   const text = value => typeof value === 'string' ? value.slice(0, 16000) : '';
   const list = value => Array.isArray(value) ? value.filter(item => typeof item === 'string').slice(0, 20).map(text) : [];
   const score = value => typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.max(0, Math.min(100, value))) : 0;

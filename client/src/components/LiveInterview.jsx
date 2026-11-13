@@ -1,5 +1,5 @@
 import PreparationGuide from '@/components/PreparationGuide';
-import InterviewerAvatar from '@/components/InterviewerAvatar';
+import AudioWaveform from '@/components/AudioWaveform';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mic, MicOff, AudioLines, ArrowLeft, Headphones, Loader2, PhoneOff } from 'lucide-react';
@@ -42,12 +42,9 @@ export default function LiveInterview({ interview }) {
       <div className="space-y-5">
         <section className="live-stage focused-interview flex flex-col rounded-3xl bg-slate-950 p-4 text-white shadow-xl sm:p-7">
           <div className="flex min-h-64 flex-col items-center justify-center text-center">
-            <InterviewerAvatar speaking={live.status === 'speaking'} busy={busy} />
+            <AudioWaveform active={active || busy} level={live.level} className="mb-6 h-48 w-full max-w-xl sm:h-56" />
             <h2 className="text-xl font-semibold" role="status" aria-live="polite">{live.muted && active ? 'Microphone muted' : labels[live.status]}</h2>
             <p hidden={active || busy} className="mt-3 max-w-sm text-sm leading-6 text-slate-300">Speak naturally. Take a moment to think, ask for clarification, or interrupt the interviewer when you need to.</p>
-            <div hidden={active || busy} className="mt-6 flex h-8 items-end gap-1" aria-label="Microphone activity">
-              {Array.from({ length: 19 }, (_, i) => <span key={i} className="w-1.5 rounded-full bg-violet-300 transition-all duration-100" style={{ height: `${4 + live.level * (16 + (i % 5) * 4)}px` }} />)}
-            </div>
           </div>
           {!active && !busy && <label className="mt-5 text-sm text-slate-300">Interviewer voice
             <select className="mt-2 block w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" value={voice} onChange={event => setVoice(event.target.value)}>

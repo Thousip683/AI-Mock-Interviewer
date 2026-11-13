@@ -185,6 +185,27 @@ export default function InterviewScreen() {
     }
   };
 
+  const endInterview = async () => {
+    if (actionRef.current) return;
+    if (!window.confirm('End this interview and generate feedback? Your current answer will be included. Unanswered questions already shown will be marked unanswered.')) return;
+    actionRef.current = true;
+    setOperationError('');
+    if (recognitionRef.current) {
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    const finalAnswers = questions.map((question, index) => ({
+      questionId: question._id,
+      question: question.text,
+      answer: index === currentIndex ? answer.trim() : (answers[index]?.answer || ''),
+    }));
+    setAnswers(finalAnswers);
+    try { await submitInterview(finalAnswers); }
+    finally { actionRef.current = false; }
+  };
+
   const toggleRecording = () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
       setOperationError('Voice dictation is unavailable in this browser. Type your answer or use a browser with SpeechRecognition support.');
@@ -368,6 +389,11 @@ export default function InterviewScreen() {
 
   return (
     <div className="container max-w-4xl py-8">
+      <div className="mb-4 flex justify-end">
+        <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={endInterview} disabled={isBusy}>
+          End interview
+        </Button>
+      </div>
       {/* Progress Bar */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-2">

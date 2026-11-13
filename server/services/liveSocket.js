@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { GoogleGenAI, Modality, ActivityHandling } from '@google/genai';
+import { GoogleGenAI, Modality, ActivityHandling, StartSensitivity, EndSensitivity } from '@google/genai';
 import { consumeLiveTicket, reserveLive } from './liveSessions.js';
 import { getLiveInterview } from './liveInterviewService.js';
 import { saveInterviewRecord } from '../repositories/interviewRepository.js';
@@ -160,7 +160,13 @@ export function attachLiveServer(server, { connect } = {}) {
               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
               inputAudioTranscription: {}, outputAudioTranscription: {},
               realtimeInputConfig: {
-                automaticActivityDetection: { disabled: false, silenceDurationMs: 1200, prefixPaddingMs: 300 },
+                automaticActivityDetection: {
+                  disabled: false,
+                  startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+                  endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+                  silenceDurationMs: 1500,
+                  prefixPaddingMs: 400,
+                },
                 activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
               },
               systemInstruction: buildLivePrompt(interview),
