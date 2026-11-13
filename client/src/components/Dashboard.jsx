@@ -6,6 +6,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import api from '@/lib/api';
+import { progressStats } from '@/lib/progress';
+import ProgressPanel from './ProgressPanel';
 import { formatDate } from '@/lib/utils';
 import { 
   PlusCircle, Clock, TrendingUp, Target, 
@@ -16,6 +18,7 @@ import {
 export default function Dashboard() {
   const { user } = useUser();
   const [interviews, setInterviews] = useState([]);
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [stats, setStats] = useState({
@@ -37,17 +40,7 @@ export default function Dashboard() {
       if (!Array.isArray(data)) throw new Error('Unexpected interview response');
       setInterviews(data);
 
-      const completed = data.filter(i => i.status === 'completed');
-      const avgScore = completed.length > 0
-        ? Math.round(completed.reduce((sum, i) => sum + (i.score || 0), 0) / completed.length)
-        : 0;
-
-      setStats({
-        total: data.length,
-        completed: completed.length,
-        averageScore: avgScore,
-        improvement: completed.length > 1 ? (completed[0].score || 0) - (completed[1].score || 0) : null,
-      });
+      setStats(progressStats(data));
     } catch (err) {
       setLoadError(err.response?.data?.error || 'Could not load interviews. Check your connection and retry.');
     } finally {
@@ -76,6 +69,8 @@ export default function Dashboard() {
     }
   };
 
+  const visible = interviews.filter(item => `${item.role} ${item.type} ${item.status}`.toLowerCase().includes(search.toLowerCase()));
+  const pending = interviews.find(item => item.status === "in_progress");
   return (
     <div className="container py-8 space-y-8">
       {/* Welcome Header */}
@@ -99,6 +94,8 @@ export default function Dashboard() {
         <div><p className="text-xs font-semibold uppercase tracking-widest text-primary">Your personal studio</p><h2 className="mt-2 text-3xl sm:text-4xl">Make room for your next breakthrough.</h2><p className="mt-2 max-w-xl text-sm leading-7 text-muted-foreground">Start a conversation, revisit your notes, or take the next step on your learning path.</p><Link to="/feedback" className="mt-3 inline-flex items-center gap-2 rounded-lg py-2 text-sm font-semibold text-primary">Revisit your learning <ArrowRight className="h-4 w-4" /></Link></div>
         <img src="/images/interview-studio.svg" alt="" className="hidden w-44 shrink-0 drop-shadow-xl sm:block" width="176" height="160" />
       </section>
+      {pending && <Link to={`/interview/${pending._id}`} className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-5"><span><strong>Continue interview</strong><span className="ml-3 text-sm">{pending.role}</span></span><ArrowRight/></Link>}
+      <ProgressPanel interviews={interviews}/>
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-purple-500">
@@ -134,7 +131,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Average Score</p>
-                <p className="text-3xl font-bold mt-1">{stats.averageScore}%</p>
+                <p className="text-3xl font-bold mt-1">{stats.averageScore === null ? "—" : `${stats.averageScore}%`}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
                 <Target className="w-6 h-6 text-blue-600" />
@@ -147,7 +144,7 @@ export default function Dashboard() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Last score change</p>
+                <p className="text-sm text-muted-foreground">Comparable score change</p>
                 <p className="text-3xl font-bold mt-1">{stats.improvement === null ? '—' : `${stats.improvement > 0 ? '+' : ''}${stats.improvement} pts`}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center">
@@ -158,6 +155,8 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      <label className="block text-sm font-medium">Search interview history<input type="search" className="mt-2 block w-full rounded-xl border bg-background p-3" value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search role, interview type or status"/></label>
+      {!!search && !visible.length && <p role="status">No interviews match your search.</p>}
       {/* Interview List */}
       <div>
         <Tabs defaultValue="all" className="space-y-6">
@@ -174,27 +173,27 @@ export default function Dashboard() {
             {interviews.length === 0 ? (
               <EmptyState />
             ) : (
-              interviews.map((interview) => (
+              visible.map((interview) => (
                 <InterviewCard key={interview._id} interview={interview} getStatusBadge={getStatusBadge} />
               ))
             )}
           </TabsContent>
 
           <TabsContent value="completed" className="space-y-4">
-            {interviews.filter(i => i.status === 'completed').length === 0 ? (
+            {visible.filter(i => i.status === 'completed').length === 0 ? (
               <EmptyState />
             ) : (
-              interviews.filter(i => i.status === 'completed').map((interview) => (
+              visible.filter(i => i.status === 'completed').map((interview) => (
                 <InterviewCard key={interview._id} interview={interview} getStatusBadge={getStatusBadge} />
               ))
             )}
           </TabsContent>
 
           <TabsContent value="pending" className="space-y-4">
-            {interviews.filter(i => i.status !== 'completed').length === 0 ? (
+            {visible.filter(i => i.status !== 'completed').length === 0 ? (
               <EmptyState />
             ) : (
-              interviews.filter(i => i.status !== 'completed').map((interview) => (
+              visible.filter(i => i.status !== 'completed').map((interview) => (
                 <InterviewCard key={interview._id} interview={interview} getStatusBadge={getStatusBadge} />
               ))
             )}
@@ -223,7 +222,7 @@ function InterviewCard({ interview, getStatusBadge }) {
                 {getStatusBadge(interview.status)}
                 {interview.mode === 'live' && <Badge variant="secondary">Live voice</Badge>}
                 {interview.status === 'completed' && (
-                  <span className="text-sm font-medium text-emerald-600">{interview.score}% Score</span>
+                  <span className="text-sm font-medium text-emerald-600">{interview.evaluationSource === "gemini" ? `${interview.score}% AI score` : "Not AI-assessed"}</span>
                 )}
               </div>
             </div>

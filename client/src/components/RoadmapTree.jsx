@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { TopicActions } from './ReportActions';
 
-export default function RoadmapTree({ roadmap = [] }) {
+export default function RoadmapTree({ roadmap = [], interviewId }) {
   const [open, setOpen] = useState({ 0: true });
   if (!roadmap.length) return <p className="rounded-xl border p-5 text-sm text-muted-foreground">Re-analyze saved answers to generate your topic summaries and learning path.</p>;
   return <section className="rounded-2xl border bg-card p-5 sm:p-7" aria-label="Collapsible study roadmap">
@@ -15,6 +16,7 @@ export default function RoadmapTree({ roadmap = [] }) {
             <section className="rounded-xl border p-4"><h3 className="mb-3 text-sm font-semibold">Learn in this order</h3><ol className="list-decimal space-y-2 pl-4 text-sm leading-6">{topic.steps?.map((step, i) => <li key={i}>{step}</li>)}</ol></section>
           </div>
           <div className="grid gap-4 sm:grid-cols-2"><div className="rounded-xl bg-[#f4ead7]/60 p-4"><h3 className="text-xs font-semibold uppercase tracking-widest text-[#73571d]">Practice</h3><p className="mt-2 text-sm leading-6">{topic.practiceTask || 'Apply the learning steps to an example of your own.'}</p></div><div className="rounded-xl bg-[#e8eee9] p-4"><h3 className="text-xs font-semibold uppercase tracking-widest text-[#365546]">Ready to move on when</h3><p className="mt-2 text-sm leading-6">{topic.successCriteria || 'Explain the topic and complete the practice task without referring to your notes.'}</p></div></div>
+          {interviewId && <TopicActions id={interviewId} topic={topic} index={index}/>}
           {topic.reason && <p className="text-xs leading-6 text-muted-foreground"><strong>Why this topic:</strong> {topic.reason}</p>}
         </div>
       </details>

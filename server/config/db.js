@@ -4,6 +4,7 @@ const connectDB = async () => {
   const uri = process.env.MONGODB_URI;
 
   if (!uri) {
+    if (process.env.NODE_ENV === "production") throw new Error("MONGODB_URI is required in production");
     console.warn('[DB] ⚠️ MONGODB_URI is not defined in environment variables. Falling back to local file storage.');
     return;
   }
@@ -29,6 +30,7 @@ const connectDB = async () => {
     const conn = await mongoose.connect(uri);
     console.log(`[DB] ✅ MongoDB Connected successfully to host: ${conn.connection.host}, database: ${conn.connection.name}`);
   } catch (error) {
+    if (process.env.NODE_ENV === "production") throw error;
     console.warn(`[DB] ⚠️ MongoDB connection failed: ${error.message}`);
     console.warn('[DB] 📁 Falling back to local JSON file storage (server/data/interviews.json)');
   }

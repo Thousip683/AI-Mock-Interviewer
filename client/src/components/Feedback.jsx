@@ -1,3 +1,4 @@
+import { ReportPrint } from './ReportActions';
 import RoadmapTree from '@/components/RoadmapTree';
 import FeedbackCharts from '@/components/FeedbackCharts';
 import FeedbackSummary from '@/components/FeedbackSummary';
@@ -86,7 +87,7 @@ export default function Feedback() {
     setRetrying(true); setReportError('');
     try {
       const { data: original } = await api.get(`/interviews/${activeInterviewId}`);
-      const configuration = Object.fromEntries(['role', 'type', 'experience', 'mode', 'jobDescription', 'focusArea', 'questionCount'].map(field => [field, original[field]]));
+      const configuration = Object.fromEntries(['role', 'type', 'experience', 'mode', 'jobDescription', 'focusArea', 'questionCount', 'resumeText', 'codingRound', 'codingLanguage'].map(field => [field, original[field]]));
       const { data } = await api.post('/interviews', configuration);
       if (!data?._id) throw new Error('The interview was not created. Please try again.');
       navigate(`/interview/${data._id}`);
@@ -165,7 +166,7 @@ export default function Feedback() {
   const performanceData = [
     { category: 'Technical', score: feedback.technicalScore ?? 0 },
     { category: 'Communication', score: feedback.communicationScore ?? 0 },
-    { category: 'Confidence', score: feedback.confidenceScore ?? 0 },
+    { category: 'Answer decisiveness', score: feedback.confidenceScore ?? 0 },
     { category: 'Relevance', score: feedback.relevanceScore ?? 0 },
     { category: 'Depth', score: feedback.depthScore ?? 0 },
   ];
@@ -178,12 +179,16 @@ export default function Feedback() {
 
   return (
     <div className="container py-8 space-y-8">
+      <ReportPrint feedback={feedback}/>
+      <section className="rounded-xl border bg-primary/5 p-5"><h2 className="text-2xl">Your next three steps</h2><ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">{(feedback.improvements?.length ? feedback.improvements : ['Review your answers.', 'Choose one topic to practice.', 'Retest after completing your study task.']).slice(0,3).map((item,i)=><li key={i}>{item}</li>)}</ol></section>
+      {feedback.practiceOf && <p className="text-sm"><Link className="underline" to={`/feedback/${feedback.practiceOf}`}>Compare with the original report →</Link> Targeted practice uses different questions; score changes are not a controlled measure of improvement.</p>}
+      <details className="rounded-xl border p-4 text-sm"><summary className="cursor-pointer font-semibold">How scoring works</summary><p className="mt-3 leading-7">Rubric v1: correctness / factual consistency 40%, reasoning 25%, clarity 20%, relevance 15%. Anchors: 0 absent, 25 major gaps, 50 partly sound, 75 sound with minor gaps, 100 complete and supported. Scores describe this answer, not your employability. Older reports may not contain rubric dimensions. AI reference answers should be checked against reliable sources. Coding is reviewed without execution.</p></details>
       {reportError && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-800">{reportError}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
         <p className="text-sm text-muted-foreground">Your report is saved with this interview. Reopen it from Dashboard or Feedback to study again.</p>
         <Button variant="outline" disabled={refreshing || retrying} onClick={refreshReport}>{refreshing ? 'Analyzing saved answers…' : 'Re-analyze saved answers'}</Button>
       </div>
-      {feedback.evaluationSource === 'heuristic' && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">AI evaluation was unavailable. These are word-count-based practice estimates, not an assessment of answer correctness.</div>}
+      {feedback.evaluationSource === 'heuristic' && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">AI evaluation was unavailable. This interview is not AI-assessed and is excluded from progress statistics. Older reports may contain word-count estimates. Re-analyze to request a real assessment.</div>}
       {feedback.mode === 'live' && <p className="text-sm text-muted-foreground">Live interview feedback is based on the saved transcript, not your vocal tone. Transcription errors can affect the evaluation.</p>}
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -224,7 +229,7 @@ export default function Feedback() {
             variant={feedback.score >= 70 ? 'success' : feedback.score >= 50 ? 'warning' : 'destructive'}
             className="text-lg px-4 py-1.5"
           >
-            Score: {feedback.score}/100
+            {feedback.evaluationSource === "gemini" ? `Score: ${feedback.score}/100` : "Not AI-assessed"}
           </Badge>
         </div>
       </div>
@@ -233,7 +238,7 @@ export default function Feedback() {
       {/* Score Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { label: 'Overall Score', value: `${feedback.score}/100`, icon: Target, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/40' },
+          { label: 'Overall Score', value: feedback.evaluationSource === "gemini" ? `${feedback.score}/100` : "—", icon: Target, color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/40' },
           { label: 'Questions Answered', value: `${feedback.answered || 0}/${feedback.total || 0}`, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/40' },
           { label: 'Strengths', value: feedback.strengths?.length || 0, icon: ThumbsUp, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-950/40' },
           { label: 'Areas to Improve', value: feedback.improvements?.length || 0, icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/40' },
@@ -336,7 +341,7 @@ export default function Feedback() {
                       <CardTitle className="text-base">{qf.question}</CardTitle>
                     </div>
                     <Badge variant={qf.score >= 70 ? 'success' : qf.score >= 50 ? 'warning' : 'destructive'}>
-                      {qf.score}/100
+                      {feedback.evaluationSource === "gemini" ? `${qf.score}/100` : "Not assessed"}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -354,6 +359,8 @@ export default function Feedback() {
                       <h3 className="font-semibold">Reference answer</h3>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-7">{qf.correctAnswer || 'A reference answer is not available in this report. Re-analyze the saved answers to request a detailed report.'}</p>
                     </div>
+                    {!!qf.evidence?.length && <section className="rounded-lg border p-4"><h3 className="text-sm font-semibold">Evidence from your answer</h3>{qf.evidence.map((quote,i)=><blockquote key={i} className="mt-2 border-l-2 border-primary pl-3 text-sm italic">“{quote}”</blockquote>)}</section>}
+                    {qf.rubric && <dl className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">{Object.entries(qf.rubric).filter(([,v])=>Number.isFinite(v)).map(([key,value])=><div key={key} className="rounded-lg bg-muted p-3"><dt className="capitalize">{key}</dt><dd className="mt-1 font-semibold">{value}/100</dd></div>)}</dl>}
                     {!!qf.missingConcepts?.length && <StudyList title="Mistakes and missing concepts" items={qf.missingConcepts} />}
                     {!!qf.studyPoints?.length && <StudyList title="Key points to study" items={qf.studyPoints} />}
                     {qf.summary && <div className="rounded-lg bg-primary/5 p-4"><h3 className="text-sm font-semibold">Remember this</h3><p className="mt-2 text-sm leading-6">{qf.summary}</p></div>}
@@ -422,7 +429,7 @@ export default function Feedback() {
             </Card>
           </div>
         </TabsContent>
-        <TabsContent value="roadmap"><RoadmapTree key={activeInterviewId} roadmap={feedback.roadmap} /></TabsContent>
+        <TabsContent value="roadmap"><RoadmapTree key={activeInterviewId} roadmap={feedback.roadmap} interviewId={activeInterviewId} /></TabsContent>
       </Tabs>
 
       {/* Actions */}

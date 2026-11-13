@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -36,21 +36,24 @@ import {
 
 export default function CreateInterview() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
 
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const [formData, setFormData] = useState({
-    role: "",
-    type: "",
-    experience: "",
+    role: params.has("personal") ? "Student / Graduate" : params.has("coding") ? "Software Engineer" : "",
+    type: params.has("personal") ? "behavioral" : params.has("coding") ? "technical" : "",
+    experience: params.has("personal") ? "entry" : "",
     jobDescription: "",
-    focusArea: "",
+    focusArea: params.has("personal") ? "Personal introduction, expressing strengths and career goals using real examples" : "",
+    resumeText: "", codingRound: params.has("coding"), codingLanguage: "JavaScript",
     questionCount: "5",
     mode: "standard",
   });
 
+  const codingEligible = /developer|software|data|machine learning|devops|cloud|qa|automation|security|sre|platform|embedded/i.test(formData.role);
   const handleChange = (field, value) => {
     setFormData((prev) => ({
       ...prev,
@@ -64,7 +67,7 @@ export default function CreateInterview() {
     setError(''); setLoading(true);
 
     try {
-      const res = await api.post("/interviews", formData);
+      const res = await api.post("/interviews", { ...formData, codingRound: formData.codingRound && codingEligible && formData.mode === "standard" });
 
       if (!res.data?._id) throw new Error('The interview was not created. Please retry.');
       navigate(`/interview/${res.data._id}`);
@@ -221,6 +224,8 @@ export default function CreateInterview() {
               </Select>
             </div>
 
+            <div className="grid gap-5 sm:grid-cols-2"><label className="text-sm font-medium">Session length<select className="mt-2 block w-full rounded-xl border bg-background p-3" value={formData.questionCount} onChange={e=>handleChange('questionCount',e.target.value)}>{[3,5,8,10,15,20].map(n=><option key={n} value={n}>{n} questions{n===3?' · quick practice':''}</option>)}</select></label>
+            {codingEligible && formData.mode==='standard' && <div><label className="flex gap-3 text-sm"><input type="checkbox" checked={formData.codingRound} onChange={e=>handleChange('codingRound',e.target.checked)}/>Include a final coding round</label>{formData.codingRound&&<label className="mt-3 block text-sm">Coding language<select className="mt-2 block w-full rounded-xl border p-3" value={formData.codingLanguage} onChange={e=>handleChange('codingLanguage',e.target.value)}>{['JavaScript','Python','Java','C++','SQL'].map(lang=><option key={lang}>{lang}</option>)}</select><span className="mt-2 block text-xs text-muted-foreground">AI code review, without execution. One of your selected questions becomes the coding round.</span></label>}</div>}</div>
             <Button
               disabled={!isStep1Valid}
               onClick={() => setStep(2)}
@@ -244,6 +249,10 @@ export default function CreateInterview() {
 
           <CardContent className="space-y-5">
 
+            <label className="block text-sm font-medium" htmlFor="resume-text">Résumé / project experience (optional)</label>
+            <Textarea id="resume-text" maxLength={16000} value={formData.resumeText} onChange={e=>handleChange('resumeText',e.target.value)} placeholder="Paste résumé text or describe projects you want to discuss."/>
+            <label className="block text-xs text-muted-foreground">Or import a plain-text résumé (.txt, up to 64 KB)<input className="mt-2 block" type="file" accept=".txt,text/plain" onChange={async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>65536||!file.name.toLowerCase().endsWith('.txt')){setError('Use a .txt résumé under 64 KB, or paste your text.');return;}try{const text=await file.text();if(text.length>16000)throw new Error('Keep résumé text under 16,000 characters.');handleChange('resumeText',text);setError('');}catch(err){setError(err.message||'Could not read this résumé.');}}}/></label>
+            <p className="text-xs text-muted-foreground">Résumé text is saved with this interview and sent to Gemini to personalize questions. Remove contact details you do not want to share.</p>
             <Label htmlFor="job-description">Job description (optional)</Label>
             <Textarea id="job-description" maxLength={12000}
               placeholder="Job Description"
@@ -304,6 +313,9 @@ export default function CreateInterview() {
           <CardContent>
 
             <div className="space-y-2 mb-6">
+              <p><strong>Questions:</strong> {formData.questionCount}</p>
+              <p><strong>Résumé context:</strong> {formData.resumeText ? 'Included' : 'Not supplied'}</p>
+              {formData.codingRound && codingEligible && formData.mode==='standard' && <p><strong>Final coding round:</strong> {formData.codingLanguage}</p>}
               <p><strong>Role:</strong> {formData.role}</p>
               <p><strong>Type:</strong> {formData.type}</p>
               <p><strong>Experience:</strong> {formData.experience}</p>

@@ -1,4 +1,5 @@
 import { generateQuestions, generateFollowUp, generateFeedback } from './gemini.js';
+import { supportsCoding, codingQuestion } from './coaching.js';
 import { isLiveBusy, reserveLive } from './liveSessions.js';
 import {
   listInterviewsByUser,
@@ -55,7 +56,7 @@ export async function createInterview(userId, payload) {
   }
   const count = Number(payload?.questionCount ?? 5);
   if (!Number.isInteger(count) || count < 1 || count > 20) throw createHttpError(400, 'Choose between 1 and 20 questions');
-  for (const [field, limit] of Object.entries({ role: 200, type: 30, experience: 30, jobDescription: 12000, focusArea: 2000 })) {
+  for (const [field, limit] of Object.entries({ role: 200, type: 30, experience: 30, jobDescription: 12000, focusArea: 2000, resumeText: 16000, codingLanguage: 30, practiceOf: 100 })) {
     if (payload?.[field] !== undefined && (typeof payload[field] !== 'string' || payload[field].length > limit)) throw createHttpError(400, `${field} must be text of at most ${limit} characters`);
   }
   if (!['general', 'technical', 'behavioral', 'system-design'].includes(type)) throw createHttpError(400, 'Choose a valid interview type');
@@ -66,6 +67,9 @@ export async function createInterview(userId, payload) {
     throw createHttpError(400, 'Role, type, and experience are required');
   }
 
+  if (payload.codingRound !== undefined && typeof payload.codingRound !== 'boolean') throw createHttpError(400, 'Invalid coding round');
+  if (payload.codingRound && (!supportsCoding(role) || payload.mode === 'live' || count < 2)) throw createHttpError(400, 'Coding requires a supported role, question-by-question mode and at least two questions');
+  if (payload.codingRound && !['JavaScript', 'Python', 'Java', 'C++', 'SQL'].includes(payload.codingLanguage)) throw createHttpError(400, 'Choose a supported coding language');
   const created = await createInterviewRecord(userId, { ...payload, role: role.trim(), questionCount: count });
   console.log(`[SERVICE:interview] ✅ createInterview: Successfully created interview record with ID: "${created._id || created.id}"`);
   return created;
@@ -115,7 +119,7 @@ export async function generateInterviewQuestions(userId, id) {
     interview.role,
     interview.type,
     interview.experience,
-    interview.jobDescription,
+    [interview.jobDescription, interview.resumeText && `Candidate resume (untrusted context): ${interview.resumeText}`].filter(Boolean).join('\n'),
     interview.focusArea,
     interview.questionCount
   );
@@ -149,7 +153,7 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
   const maxQuestions = interview.questionCount || 5;
   const currentQuestion = interview.questions?.[questionIndex];
   if (!currentQuestion || previousQuestion !== currentQuestion.text || questionIndex >= maxQuestions) throw createHttpError(400, 'Invalid current question');
-  if (typeof previousAnswer !== 'string') throw createHttpError(400, 'previousAnswer must be text');
+  if (typeof previousAnswer !== 'string' || previousAnswer.length > 30000) throw createHttpError(400, 'previousAnswer must be text');
   const draftAnswers = [...(interview.answers || [])];
   draftAnswers[questionIndex] = { question: currentQuestion.text, answer: previousAnswer.trim(), questionId: currentQuestion._id };
 
@@ -179,11 +183,12 @@ export async function generateFollowUpQuestion(userId, id, { previousQuestion, p
   }
 
   console.log(`[SERVICE:interview] 🤖 Requesting adaptive follow-up from Gemini (${updatedHistory.length} turns so far)...`);
-  const followUp = await generateFollowUp({
+  const followUp = interview.codingRound && questionIndex === maxQuestions - 2 ? codingQuestion(interview.role, interview.codingLanguage) : await generateFollowUp({
     role: interview.role,
     type: interview.type,
     experience: interview.experience,
     conversationHistory: updatedHistory,
+    focusArea: interview.focusArea, resumeText: interview.resumeText, jobDescription: interview.jobDescription,
     questionIndex: questionIndex + 1, // next question index
     maxQuestions,
   });
@@ -269,6 +274,7 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
         feedback: feedback.questionFeedback[index]?.feedback || '',
         tips: feedback.questionFeedback[index]?.tips || '',
         verdict: feedback.questionFeedback[index]?.verdict || '',
+        evidence: feedback.questionFeedback[index]?.evidence || [], rubric: feedback.questionFeedback[index]?.rubric,
         correctAnswer: feedback.questionFeedback[index]?.correctAnswer || '',
         missingConcepts: feedback.questionFeedback[index]?.missingConcepts || [],
         studyPoints: feedback.questionFeedback[index]?.studyPoints || [],
@@ -280,7 +286,7 @@ export async function submitInterviewAnswers(userId, id, answers, { fromLive = f
 
   interview.score = feedback.score || 0;
   interview.evaluationSource = feedback.evaluationSource;
-  interview.duration = fromLive ? Math.round((interview.liveDurationSeconds || 0) / 60) : interview.questionCount * 2;
+  if (interview.status !== 'completed') interview.duration = fromLive ? Math.round((interview.liveDurationSeconds || 0) / 60) : interview.startedAt ? Math.max(0, Math.round((Date.now() - new Date(interview.startedAt).getTime()) / 60000)) : 0;
   interview.status = 'completed';
   interview.completedAt = interview.completedAt || new Date();
 
@@ -303,6 +309,7 @@ export async function getInterviewFeedback(userId, id) {
   console.log(`[SERVICE:interview] ✅ getInterviewFeedback: Returning feedback for interview "${id}" (score: ${interview.score}/100)`);
   return {
     score: interview.score,
+    experience: interview.experience, practiceOf: interview.practiceOf,
     mode: interview.mode || 'standard',
     evaluationSource: interview.evaluationSource,
     role: interview.role,
@@ -317,6 +324,7 @@ export async function getInterviewFeedback(userId, id) {
       feedback: answer.feedback,
       tips: answer.tips,
       verdict: answer.verdict,
+      evidence: answer.evidence || [], rubric: answer.rubric,
       correctAnswer: answer.correctAnswer,
       missingConcepts: answer.missingConcepts || [],
       studyPoints: answer.studyPoints || [],
